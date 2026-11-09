@@ -14,11 +14,11 @@ export function Card10InterestLevel({ data }: { data: ChatWrappedAnalysis }) {
   const strokeDashoffset = circumference - (mutual / 100) * circumference;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <Flame className="w-3.5 h-3.5" /> Algorithmic Score · Card 10
+            <Flame className="w-3.5 h-3.5" /> Algorithmic Score
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             Weighted Index

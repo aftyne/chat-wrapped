@@ -15,11 +15,11 @@ export function Card04ConversationStarter({
     you.initiationPercentage >= them.initiationPercentage ? you : them;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <MessageCircleHeart className="w-3.5 h-3.5" /> Who Cares More? · Card 04
+            <MessageCircleHeart className="w-3.5 h-3.5" /> Who Cares More?
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             5h+ Silence Rule

@@ -10,11 +10,11 @@ export function Card08LongestMessage({ data }: { data: ChatWrappedAnalysis }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-lime text-ink text-xs font-semibold">
-            <Award className="w-3.5 h-3.5" /> The Yap Award · Card 08
+            <Award className="w-3.5 h-3.5" /> The Yap Award
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             {longestMessage.formattedDate}
@@ -52,7 +52,7 @@ export function Card08LongestMessage({ data }: { data: ChatWrappedAnalysis }) {
 
         <div
           className={`bg-canvas rounded-2xl p-3.5 border border-ink/[0.05] transition-all ${
-            expanded ? "max-h-[175px] overflow-y-auto" : "max-h-[110px] overflow-hidden"
+            expanded ? "" : "max-h-[110px] overflow-hidden"
           }`}
         >
           <p className="text-xs leading-relaxed text-ink font-medium">

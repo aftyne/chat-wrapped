@@ -6,22 +6,73 @@ import { MoodFaceBadge } from "@/components/ui/doodles";
 import { ShieldAlert, Unlock } from "lucide-react";
 
 export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
-  const [, them] = data.participants;
+  const [viewer, other] = data.participants;
   const { longestSilence } = data;
 
+  const isOtherYou =
+    other.name.toLowerCase() === "you" || other.name.toLowerCase() === "anda";
+  const isViewerYou =
+    viewer.name.toLowerCase() === "you" || viewer.name.toLowerCase() === "anda";
+
+  // Perspective state: true when viewing from partner's POV
+  const isSwapped = Boolean(
+    data.isSwapped !== undefined ? data.isSwapped : isOtherYou
+  );
+
+  // Dynamic partner name resolution (guaranteed never to be literal "You" or "Anda")
+  let partnerName = data.partnerName;
+  if (
+    !partnerName ||
+    partnerName.toLowerCase() === "you" ||
+    partnerName.toLowerCase() === "anda"
+  ) {
+    if (isOtherYou) {
+      partnerName = viewer.name;
+    } else if (isViewerYou) {
+      partnerName = other.name;
+    } else {
+      partnerName = isSwapped ? viewer.name : other.name;
+    }
+  }
+
+  // 1. Headline Perspective Logic:
+  // - Default Perspective (Viewing from Your POV): Did ${partnerName} block you?!
+  // - Swapped Perspective (Viewing from Partner's POV): Did you block ${partnerName}?!
+  const headline = isSwapped
+    ? `Did you block ${partnerName}?!`
+    : `Did ${partnerName} block you?!`;
+
+  // 2. Drought Metadata & Attribution Labels:
+  // Attribute quotes to the partner name or to "YOU" consistently across perspectives
+  const isLastSenderPartner =
+    longestSilence.lastSenderBeforeSilence.trim().toLowerCase() ===
+    partnerName.trim().toLowerCase();
+
+  const lastWordsSenderTag = isLastSenderPartner
+    ? partnerName.toUpperCase()
+    : "YOU";
+
+  const isBreakerPartner =
+    longestSilence.breakerSender.trim().toLowerCase() ===
+    partnerName.trim().toLowerCase();
+
+  const silenceBreakerLabel = isBreakerPartner
+    ? `${partnerName} finally broke the silence`
+    : "You finally broke the silence";
+
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <ShieldAlert className="w-3.5 h-3.5" /> High Tension · Card 13
+            <ShieldAlert className="w-3.5 h-3.5" /> High Tension
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             The Drought
           </span>
         </div>
         <h2 className="font-display text-[25px] leading-[1.15] font-bold text-ink">
-          Did {them.name} block you?!
+          {headline}
         </h2>
         <p className="text-xs text-ink-secondary mt-1 font-medium">
           Just kidding—but you two went completely radio silent for a record-breaking streak.
@@ -48,7 +99,7 @@ export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
 
         <div className="mt-3 pt-3 border-t border-white/15 text-xs text-white/90">
           <p className="text-[11px] uppercase tracking-wider text-white/60 font-semibold">
-            Last words before the drought ({longestSilence.lastSenderBeforeSilence}):
+            LAST WORDS BEFORE THE DROUGHT ({lastWordsSenderTag}):
           </p>
           <p className="italic font-medium mt-0.5 line-clamp-2">
             “{longestSilence.lastMessageBeforeSilence}”
@@ -64,7 +115,7 @@ export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
               <Unlock className="w-3.5 h-3.5 text-ink" />
             </span>
             <span className="text-xs font-bold text-ink">
-              {longestSilence.breakerSender} finally broke the silence
+              {silenceBreakerLabel}
             </span>
           </div>
           <span className="text-[11px] font-semibold text-ink-secondary">

@@ -31,11 +31,11 @@ export function Card11AttachmentStyle({ data }: { data: ChatWrappedAnalysis }) {
   const [you, them] = data.participants;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-lavender text-ink text-xs font-semibold">
-            <Compass className="w-3.5 h-3.5" /> Attachment Matrix · Card 11
+            <Compass className="w-3.5 h-3.5" /> Attachment Matrix
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             Behavioral Grid

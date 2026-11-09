@@ -17,11 +17,11 @@ export function Card06TopWords({ data }: { data: ChatWrappedAnalysis }) {
   const [you, them] = data.participants;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-mint text-ink text-xs font-semibold">
-            <Sparkles className="w-3.5 h-3.5" /> Vocabulary Split · Card 06
+            <Sparkles className="w-3.5 h-3.5" /> Vocabulary Split
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             Stop-words filtered

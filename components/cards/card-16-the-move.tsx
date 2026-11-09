@@ -24,12 +24,12 @@ export function Card16TheMove({
   const { verdict } = data;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-2.5">
+    <div className="flex flex-col justify-between min-h-full gap-2.5">
       {/* Top Verdict Quote & Grade */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <Sparkles className="w-3.5 h-3.5" /> Final Verdict · Card 16
+            <Sparkles className="w-3.5 h-3.5" /> Final Verdict
           </span>
           <span className="px-3 py-1 rounded-full bg-petrol text-white text-xs font-bold">
             Grade: {verdict.grade} ({verdict.compatibilityScore}%)

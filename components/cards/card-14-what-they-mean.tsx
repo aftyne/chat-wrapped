@@ -9,11 +9,11 @@ export function Card14WhatTheyMean({ data }: { data: ChatWrappedAnalysis }) {
   const items = data.translations.slice(0, 3);
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <Languages className="w-3.5 h-3.5" /> Subtext Decoder · Card 14
+            <Languages className="w-3.5 h-3.5" /> Subtext Decoder
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             AI Lingua Franca

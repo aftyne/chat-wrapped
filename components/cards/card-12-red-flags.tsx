@@ -9,11 +9,11 @@ export function Card12RedFlags({ data }: { data: ChatWrappedAnalysis }) {
   const triggeredCount = flags.filter((f) => f.triggered).length;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-2.5">
+    <div className="flex flex-col justify-between min-h-full gap-2.5">
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <Flag className="w-3.5 h-3.5" /> Red Flags Audit · Card 12
+            <Flag className="w-3.5 h-3.5" /> Red Flags Audit
           </span>
           <span className="px-2.5 py-0.5 rounded-full bg-ink text-white text-xs font-bold">
             {triggeredCount}/{flags.length} Triggered

@@ -10,11 +10,11 @@ export function Card09LeftOnRead({ data }: { data: ChatWrappedAnalysis }) {
   const { leftOnRead } = data;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-lavender text-ink text-xs font-semibold">
-            <Ghost className="w-3.5 h-3.5" /> Left On Read · Card 09
+            <Ghost className="w-3.5 h-3.5" /> Left On Read
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             12h+ Ghost Threshold
@@ -71,7 +71,7 @@ export function Card09LeftOnRead({ data }: { data: ChatWrappedAnalysis }) {
       <div className="bg-orchid rounded-card p-4 shadow-card">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-bold uppercase tracking-wider text-ink/75">
-            Exhibit A · Coldest Read Receipt
+            Coldest Read Receipt
           </span>
           <span className="px-2.5 py-0.5 rounded-full bg-ink text-white text-[11px] font-bold">
             {leftOnRead.worstIncident.hoursIgnored}h ignored

@@ -196,13 +196,34 @@ export function analyzeChatMessages(
   const firstSender = rankedSenders[0] || "You";
   const secondSender = rankedSenders[1] || "Them";
 
-  let youName = firstSender;
-  let themName = secondSender;
+  let defaultYou = firstSender;
+  let defaultThem = secondSender;
 
-  if (preferredYouName && preferredYouName === secondSender) {
-    youName = secondSender;
-    themName = firstSender;
+  if (
+    rankedSenders.length >= 2 &&
+    (rankedSenders[1].toLowerCase() === "you" || rankedSenders[1].toLowerCase() === "anda")
+  ) {
+    defaultYou = rankedSenders[1];
+    defaultThem = rankedSenders[0];
   }
+
+  let youName = defaultYou;
+  let themName = defaultThem;
+  let isSwapped = false;
+
+  if (preferredYouName) {
+    if (preferredYouName === defaultThem) {
+      youName = defaultThem;
+      themName = defaultYou;
+      isSwapped = true;
+    } else {
+      youName = defaultYou;
+      themName = defaultThem;
+      isSwapped = false;
+    }
+  }
+
+  const partnerName = defaultThem;
 
   // Filter to our two main participants
   const duoMessages = sorted.filter(
@@ -992,6 +1013,8 @@ export function analyzeChatMessages(
 
   return {
     chatTitle: `${youName} & ${themName}`,
+    isSwapped,
+    partnerName,
     totalMessages,
     totalWords: youMetrics.wordCount + themMetrics.wordCount,
     totalDaysSpan,

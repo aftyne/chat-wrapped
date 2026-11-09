@@ -47,7 +47,7 @@ export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
   }
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         {/* Day / Week / Month Segmented Pill Header (Reference Screen 3) */}
         <div className="grid grid-cols-3 gap-2 mb-3">

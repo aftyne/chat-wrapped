@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, PanInfo } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { toPng } from "html-to-image";
 import { ChatWrappedAnalysis } from "@/lib/types";
 import {
@@ -10,8 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Pause,
-  Play,
   Share2,
 } from "lucide-react";
 
@@ -51,8 +49,6 @@ const SLIDE_TITLES = [
   "The Move",
 ];
 
-const SLIDE_DURATION_MS = 8000;
-
 interface StoryContainerProps {
   data: ChatWrappedAnalysis;
   onExit: () => void;
@@ -66,30 +62,22 @@ export function StoryContainer({
 }: StoryContainerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isHolding, setIsHolding] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const captureRef = useRef<HTMLDivElement>(null);
-  const pointerDownTimeRef = useRef<number>(0);
 
   const totalSlides = 16;
-  const effectivePaused = isPaused || isHolding || isExporting;
 
   const goToNext = useCallback(() => {
-    setProgress(0);
     if (currentIndex < totalSlides - 1) {
       setDirection(1);
       setCurrentIndex((prev) => prev + 1);
-    } else {
-      setIsPaused(true);
     }
   }, [currentIndex, totalSlides]);
 
   const goToPrev = useCallback(() => {
-    setProgress(0);
     if (currentIndex > 0) {
       setDirection(-1);
       setCurrentIndex((prev) => prev - 1);
@@ -100,36 +88,17 @@ export function StoryContainer({
     (idx: number) => {
       if (idx === currentIndex) return;
       setDirection(idx > currentIndex ? 1 : -1);
-      setProgress(0);
       setCurrentIndex(idx);
     },
     [currentIndex]
   );
 
-  // Auto-advance timer
+  // Reset vertical scroll position to top when switching cards
   useEffect(() => {
-    if (effectivePaused) return;
-
-    const intervalMs = 50;
-    const step = (intervalMs / SLIDE_DURATION_MS) * 100;
-
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev + step >= 100) {
-          return 100;
-        }
-        return prev + step;
-      });
-    }, intervalMs);
-
-    return () => clearInterval(timer);
-  }, [effectivePaused, currentIndex]);
-
-  useEffect(() => {
-    if (progress >= 100) {
-      goToNext();
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
     }
-  }, [progress, goToNext]);
+  }, [currentIndex]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -138,9 +107,6 @@ export function StoryContainer({
         goToNext();
       } else if (e.key === "ArrowLeft") {
         goToPrev();
-      } else if (e.key === " ") {
-        e.preventDefault();
-        setIsPaused((p) => !p);
       } else if (e.key === "Escape") {
         onExit();
       }
@@ -196,46 +162,6 @@ export function StoryContainer({
       setIsExporting(false);
     }
   }, [currentIndex, data.chatTitle, isExporting]);
-
-  // Tap left/right handler + press-and-hold detection
-  const handlePointerDown = () => {
-    pointerDownTimeRef.current = Date.now();
-    setIsHolding(true);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    const holdDuration = Date.now() - pointerDownTimeRef.current;
-    setIsHolding(false);
-
-    // If user held for more than 240ms, treat as pause-hold release rather than tap
-    if (holdDuration > 240) return;
-
-    // Ignore taps on buttons or interactive controls
-    const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("a")) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    if (clickX < rect.width * 0.33) {
-      goToPrev();
-    } else {
-      goToNext();
-    }
-  };
-
-  // Vertical drag to exit
-  const handleDragEnd = (
-    _: MouseEvent | TouchEvent | PointerEvent,
-    info: PanInfo
-  ) => {
-    if (info.offset.y > 110 && info.velocity.y > 150) {
-      onExit();
-    } else if (info.offset.x < -60) {
-      goToNext();
-    } else if (info.offset.x > 60) {
-      goToPrev();
-    }
-  };
 
   // Calculate visible window of 7 slide numbers (like 21..27 in Reference Screen 3)
   const windowSize = 7;
@@ -296,55 +222,22 @@ export function StoryContainer({
   };
 
   return (
-    <motion.div
-      drag="y"
-      dragConstraints={{ top: 0, bottom: 0 }}
-      dragElastic={{ top: 0, bottom: 0.35 }}
-      onDragEnd={handleDragEnd}
-      className="relative w-full h-full flex flex-col justify-between bg-canvas select-none overflow-hidden"
+    <div
+      className="relative w-full h-full flex flex-col justify-between bg-canvas overflow-hidden"
       style={{
         paddingTop: "max(12px, env(safe-area-inset-top))",
         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
       }}
     >
-      {/* Top Story Segmented Progress Bars */}
-      <div className="px-4 pt-1 z-20">
-        <div className="grid grid-cols-16 gap-1 w-full" style={{ gridTemplateColumns: "repeat(16, minmax(0, 1fr))" }}>
-          {Array.from({ length: totalSlides }).map((_, idx) => {
-            const fillPct =
-              idx < currentIndex ? 100 : idx === currentIndex ? progress : 0;
-            return (
-              <button
-                key={idx}
-                type="button"
-                aria-label={`Go to slide ${idx + 1}: ${SLIDE_TITLES[idx]}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  jumpToSlide(idx);
-                }}
-                className="h-2 py-0.5 group focus:outline-none"
-              >
-                <div className="w-full h-1 rounded-full bg-ink/15 overflow-hidden">
-                  <div
-                    className="h-full bg-petrol rounded-full transition-all duration-75"
-                    style={{ width: `${fillPct}%` }}
-                  />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Top Header Bar (Mirrors Reference Screen 2 & 3: White Circle Back Button + Centered Title + Action Button) */}
-        <div className="flex items-center justify-between mt-2.5">
+      {/* Top Header & Numbered Pagination Strip */}
+      <div className="px-4 pt-1 shrink-0 z-20">
+        {/* Top Header Bar (White Circle Back Button + Centered Title + Perspective Swap Button) */}
+        <div className="flex items-center justify-between">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onExit();
-            }}
+            onClick={onExit}
             aria-label="Back to upload screen"
-            className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink hover:bg-white/80 active:scale-95 transition-transform"
+            className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink hover:bg-white/80 active:scale-95 transition-transform shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -359,37 +252,15 @@ export function StoryContainer({
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSwapPerspective();
-              }}
-              title="Swap You & Them perspective"
-              aria-label="Swap You and Them perspective"
-              className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink hover:bg-orchid/50 active:scale-95 transition-all"
-            >
-              <ArrowLeftRight className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsPaused((prev) => !prev);
-              }}
-              aria-label={effectivePaused ? "Resume story" : "Pause story"}
-              className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink hover:bg-white/80 active:scale-95 transition-transform relative"
-            >
-              {effectivePaused ? (
-                <Play className="w-4 h-4 fill-ink" />
-              ) : (
-                <Pause className="w-4 h-4" />
-              )}
-              <span className="w-2 h-2 rounded-full bg-orchid-vivid absolute top-2 right-2" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onSwapPerspective}
+            title="Swap You & Them perspective"
+            aria-label="Swap You and Them perspective"
+            className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink hover:bg-orchid/50 active:scale-95 transition-all shrink-0"
+          >
+            <ArrowLeftRight className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Circular Numbered Pill Strip (Directly inspired by "21 22 23 24 25 26 27" on Reference Screen 3) */}
@@ -400,10 +271,7 @@ export function StoryContainer({
               <button
                 key={idx}
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  jumpToSlide(idx);
-                }}
+                onClick={() => jumpToSlide(idx)}
                 className={`w-9 h-9 rounded-full text-xs font-bold flex items-center justify-center transition-all ${
                   isActive
                     ? "bg-petrol text-white shadow-pill scale-105"
@@ -417,38 +285,34 @@ export function StoryContainer({
         </div>
       </div>
 
-      {/* Capturable Story Slide Area */}
+      {/* Scrollable Story Card Viewport */}
       <div
-        ref={captureRef}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={() => setIsHolding(false)}
-        className="flex-1 px-4 py-3 flex flex-col justify-between overflow-hidden bg-canvas relative cursor-pointer"
+        ref={scrollContainerRef}
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar px-4 py-3"
+        style={{ WebkitOverflowScrolling: "touch" }}
       >
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={`${currentIndex}-${data.participants[0].name}`}
+            ref={captureRef}
             custom={direction}
-            initial={{ opacity: 0, x: direction * 28, scale: 0.98 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: direction * -28, scale: 0.98 }}
-            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full h-full flex flex-col justify-between"
+            initial={{ opacity: 0, x: direction * 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: direction * -24 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full min-h-full flex flex-col justify-between bg-canvas"
           >
             {renderActiveCard()}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Bottom Controls Bar (Prev / Share Current Slide / Next) */}
-      <div className="px-4 pt-1 z-20 flex items-center justify-between gap-2">
+      {/* Bottom Controls Bar (Prev / Next + Export Card) */}
+      <div className="px-4 pt-1 shrink-0 z-20 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goToPrev();
-            }}
+            onClick={goToPrev}
             disabled={currentIndex === 0}
             aria-label="Previous slide"
             className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink disabled:opacity-35 active:scale-95 transition-transform"
@@ -457,10 +321,7 @@ export function StoryContainer({
           </button>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goToNext();
-            }}
+            onClick={goToNext}
             disabled={currentIndex === totalSlides - 1}
             aria-label="Next slide"
             className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center text-ink disabled:opacity-35 active:scale-95 transition-transform"
@@ -469,16 +330,9 @@ export function StoryContainer({
           </button>
         </div>
 
-        <span className="text-[11px] font-semibold text-ink-secondary">
-          Tap sides · Hold to pause
-        </span>
-
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleShareCurrentCard();
-          }}
+          onClick={handleShareCurrentCard}
           disabled={isExporting}
           className="h-11 px-4 rounded-full bg-white shadow-pill flex items-center gap-1.5 text-xs font-bold text-ink hover:bg-orchid/50 active:scale-95 transition-all"
         >
@@ -507,6 +361,6 @@ export function StoryContainer({
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

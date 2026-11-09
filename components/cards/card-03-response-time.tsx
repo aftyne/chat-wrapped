@@ -25,11 +25,11 @@ export function Card03ResponseTime({ data }: { data: ChatWrappedAnalysis }) {
     you.medianReplyMinutes <= them.medianReplyMinutes ? you : them;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-lime text-ink text-xs font-semibold">
-            <Zap className="w-3.5 h-3.5" /> Reply Velocity · Card 03
+            <Zap className="w-3.5 h-3.5" /> Reply Velocity
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             Latency Audit

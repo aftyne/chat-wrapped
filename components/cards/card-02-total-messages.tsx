@@ -13,12 +13,12 @@ export function Card02TotalMessages({ data }: { data: ChatWrappedAnalysis }) {
   const [you, them] = data.participants;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       {/* Header matching "Good Morning, Frede / Select what you want more for now" */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center px-3.5 py-1 rounded-full bg-lavender text-ink text-xs font-semibold">
-            Volume & Split · Card 02
+            Volume & Split
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             {data.messagesPerDay} msgs / day

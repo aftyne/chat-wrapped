@@ -11,11 +11,11 @@ export function Card05DeletedMessages({ data }: { data: ChatWrappedAnalysis }) {
   const topDeleter = you.deletedCount >= them.deletedCount ? you : them;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
-            <Trash2 className="w-3.5 h-3.5" /> Second Thoughts · Card 05
+            <Trash2 className="w-3.5 h-3.5" /> Second Thoughts
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             Revoked Logs

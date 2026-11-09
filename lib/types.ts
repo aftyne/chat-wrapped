@@ -161,6 +161,8 @@ export interface FinalVerdictData {
 
 export interface ChatWrappedAnalysis {
   chatTitle: string;
+  isSwapped?: boolean;
+  partnerName?: string;
   totalMessages: number;
   totalWords: number;
   totalDaysSpan: number;

@@ -11,12 +11,12 @@ export function Card01FirstMessage({ data }: { data: ChatWrappedAnalysis }) {
   const isYouFirst = firstMessage.sender === you.name;
 
   return (
-    <div className="flex flex-col justify-between h-full gap-3">
+    <div className="flex flex-col justify-between min-h-full gap-3">
       {/* Top Pill & Editorial Quote Header (mirrors middle screen of reference image) */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-orchid text-ink text-xs font-semibold tracking-tight">
-            Origin story · Card 01
+            Origin story
           </span>
           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white text-ink-secondary text-xs font-medium shadow-pill">
             <Calendar className="w-3.5 h-3.5" />
