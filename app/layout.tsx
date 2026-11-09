@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Chat Wrapped · 100% Client-Side WhatsApp Story Analyzer",
+  title: "Chat Wrapped",
   description:
     "Decode your WhatsApp chat history into a 16-card interactive Wrapped story deck—100% private in your browser.",
 };
