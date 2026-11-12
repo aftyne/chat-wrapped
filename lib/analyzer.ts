@@ -6,6 +6,7 @@ import {
   LongestMessageData,
   ParsedMessage,
   ParticipantMetrics,
+  PhraseExample,
   RedFlagItem,
   SharedLoreItem,
   SilenceGapData,
@@ -13,6 +14,10 @@ import {
   TranslationItem,
   WordFrequency,
 } from "./types";
+import {
+  isOmittedOrSystemPlaceholder,
+  stripOmissionPlaceholders,
+} from "./parser";
 
 const STOP_WORDS = new Set([
   // English stop words
@@ -31,13 +36,16 @@ const STOP_WORDS = new Set([
   "right", "day", "today", "tomorrow", "yesterday", "something", "anything", "nothing",
   "everything", "someone", "anyone", "everyone", "after", "before", "over", "under",
   "again", "never", "always", "sometimes", "maybe", "probably", "actually", "literally",
-  "media", "omitted", "message", "deleted", "https", "http", "www", "com",
+  // Omission & system words to never surface as vocabulary/lore
+  "media", "omitted", "image", "sticker", "video", "audio", "gif", "document",
+  "contact", "card", "message", "deleted", "missed", "voice", "call", "null",
+  "attached", "file", "https", "http", "www", "com", "tidak", "disertakan",
   // Indonesian stop words (for bilingual chats)
-  "yang", "dan", "di", "ke", "dari", "ini", "itu", "dengan", "untuk", "tidak",
+  "yang", "dan", "di", "ke", "dari", "ini", "itu", "dengan", "untuk",
   "bisa", "ada", "jadi", "kalau", "kalo", "aja", "saja", "udah", "sudah", "belum",
   "lagi", "mau", "गा", "gak", "ga", "nggak", "enggak", "iya", "ya", "yg", "aku",
   "kamu", "dia", "kita", "mereka", "sama", "buat", "tapi", "karena", "karna",
-  "udah", "dah", "kan", "kok", "sih", "dong", "deh", "nih", "tuh", "gitu", "gini",
+  "dah", "kan", "kok", "sih", "dong", "deh", "nih", "tuh", "gitu", "gini",
   "banget", "bgt", "apa", "gimana", "kenapa", "kapan", "mana", "siapa", "nya",
 ]);
 
@@ -125,6 +133,19 @@ function formatNiceDate(timestamp: number): string {
   });
 }
 
+function formatTime12FromStr(timeStr: string): string {
+  const parts = timeStr.split(":");
+  const h = parseInt(parts[0] || "0", 10);
+  const m = parts[1] || "00";
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m} ${period}`;
+}
+
+function formatMessageTimestamp(timestamp: number, timeStr: string): string {
+  return `${formatNiceDate(timestamp)} · ${formatTime12FromStr(timeStr)}`;
+}
+
 function formatHour12(hour: number): string {
   const period = hour >= 12 ? "PM" : "AM";
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
@@ -163,13 +184,37 @@ function getSpeedBadge(medianMinutes: number): { badge: string; subtext: string 
 }
 
 function tokenizeWords(text: string): string[] {
-  return text
+  const sanitized = stripOmissionPlaceholders(text);
+  if (!sanitized) return [];
+  return sanitized
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/[^\p{L}\p{N}'’]+/gu, " ")
     .split(/\s+/)
     .map((w) => w.replace(/^['’]+|['’]+$/g, ""))
     .filter((w) => w.length >= 3 && !STOP_WORDS.has(w) && !/^\d+$/.test(w));
+}
+
+function pickDiverseExamples(
+  matches: ParsedMessage[],
+  maxCount = 3
+): PhraseExample[] {
+  if (matches.length === 0) return [];
+  let selected: ParsedMessage[] = [];
+  if (matches.length <= maxCount) {
+    selected = matches;
+  } else {
+    // Pick first, middle, and latest occurrence across timeline
+    const first = matches[0];
+    const mid = matches[Math.floor(matches.length / 2)];
+    const last = matches[matches.length - 1];
+    selected = [first, mid, last];
+  }
+  return selected.map((m) => ({
+    sender: m.sender,
+    text: m.text.length > 180 ? `${m.text.slice(0, 180).trim()}…` : m.text,
+    timestamp: formatMessageTimestamp(m.timestamp, m.timeStr),
+  }));
 }
 
 export function analyzeChatMessages(
@@ -324,6 +369,8 @@ export function analyzeChatMessages(
     pStat.wordCount += msg.wordCount;
     pStat.charCount += msg.charCount;
 
+    const isOmitted = msg.isMedia || msg.isDeleted || isOmittedOrSystemPlaceholder(msg.text);
+
     if (msg.isMedia) pStat.mediaCount++;
     if (msg.isDeleted) pStat.deletedCount++;
     if (msg.hour >= 23 || msg.hour <= 4) pStat.lateNightCount++;
@@ -342,23 +389,36 @@ export function analyzeChatMessages(
       pStat.maxConsecutive = currentStreakLength;
     }
 
-    // Track longest message
-    if (!msg.isMedia && !msg.isDeleted) {
+    // Track longest message & vocabulary/phrase stats (strictly excluding omitted media/system strings)
+    if (!isOmitted) {
+      const cleanBody = stripOmissionPlaceholders(msg.text);
       if (sender === youName) {
-        if (!longestByYou || msg.charCount > longestByYou.charCount) {
+        if (!longestByYou || cleanBody.length > longestByYou.charCount) {
           longestByYou = msg;
         }
       } else {
-        if (!longestByThem || msg.charCount > longestByThem.charCount) {
+        if (!longestByThem || cleanBody.length > longestByThem.charCount) {
           longestByThem = msg;
         }
       }
 
-      const trimmedLower = msg.text.trim().toLowerCase().replace(/[.!?,]+$/g, "");
+      const trimmedLower = cleanBody
+        .trim()
+        .toLowerCase()
+        .replace(/^[<>]+|[<>]+$/g, "")
+        .replace(/[.!?,]+$/g, "")
+        .trim();
+
       if (trimmedLower.length === 1 || trimmedLower === "ok" || trimmedLower === "k") {
         pStat.singleLetterReplies++;
       }
-      if (trimmedLower.length >= 1 && trimmedLower.length <= 18 && msg.wordCount <= 3) {
+      if (
+        trimmedLower.length >= 1 &&
+        trimmedLower.length <= 18 &&
+        msg.wordCount <= 3 &&
+        !isOmittedOrSystemPlaceholder(trimmedLower) &&
+        !/\bomitted\b|\bdeleted\b|\bmissed\b|\bnull\b/i.test(trimmedLower)
+      ) {
         pStat.shortPhraseFreq.set(
           trimmedLower,
           (pStat.shortPhraseFreq.get(trimmedLower) || 0) + 1
@@ -366,7 +426,7 @@ export function analyzeChatMessages(
       }
 
       // Tokenize for top words & shared lore
-      const tokens = tokenizeWords(msg.text);
+      const tokens = tokenizeWords(cleanBody);
       for (let t = 0; t < tokens.length; t++) {
         const w = tokens[t];
         pStat.wordFreq.set(w, (pStat.wordFreq.get(w) || 0) + 1);
@@ -406,7 +466,7 @@ export function analyzeChatMessages(
       if (sender === prevSender && deltaHours >= 12) {
         // The OTHER person left this sender on read!
         statsMap[other].ghostsCaused++;
-        if (deltaHours > worstGhostIncident.hoursIgnored && !msg.isMedia && !msg.isDeleted) {
+        if (deltaHours > worstGhostIncident.hoursIgnored && !isOmitted) {
           worstGhostIncident = {
             ghoster: other,
             victim: sender,
@@ -429,10 +489,14 @@ export function analyzeChatMessages(
           endDate: formatNiceDate(msg.timestamp),
           lastSenderBeforeSilence: prevSender,
           lastMessageBeforeSilence:
-            prev.isMedia ? "Sent a media attachment" : prev.text.slice(0, 85),
+            prev.isMedia || isOmittedOrSystemPlaceholder(prev.text)
+              ? "Sent a media attachment"
+              : prev.text.slice(0, 85),
           breakerSender: sender,
           breakerMessage:
-            msg.isMedia ? "Sent a media attachment" : msg.text.slice(0, 85),
+            msg.isMedia || isOmittedOrSystemPlaceholder(msg.text)
+              ? "Sent a media attachment"
+              : msg.text.slice(0, 85),
         };
       }
     }
@@ -505,7 +569,6 @@ export function analyzeChatMessages(
     );
 
     // Attachment Style classification
-    // Anxiety Axis: driven by double texting, initiation > 52%, late night volume
     const anxietyAxis = Math.max(
       -90,
       Math.min(
@@ -517,7 +580,6 @@ export function analyzeChatMessages(
         )
       )
     );
-    // Avoidance Axis: driven by slow reply time, ghost incidents caused, short messages
     const avoidanceAxis = Math.max(
       -90,
       Math.min(
@@ -596,11 +658,11 @@ export function analyzeChatMessages(
   themMetrics.initiationPercentage = Math.max(0, 100 - youMetrics.initiationPercentage);
 
   // Card 1: First Message
-  const firstTextMsg =
-    activeMessages.find((m) => !m.isMedia && !m.isDeleted) || activeMessages[0];
-  const secondTextMsg = activeMessages.find(
-    (m) => m.id > firstTextMsg.id && !m.isMedia && !m.isDeleted
+  const nonOmittedMessages = activeMessages.filter(
+    (m) => !m.isMedia && !m.isDeleted && !isOmittedOrSystemPlaceholder(m.text)
   );
+  const firstTextMsg = nonOmittedMessages[0] || activeMessages[0];
+  const secondTextMsg = nonOmittedMessages.find((m) => m.id > firstTextMsg.id);
   const firstMessage: FirstMessageData = {
     sender: firstTextMsg.sender,
     text: firstTextMsg.text,
@@ -620,6 +682,24 @@ export function analyzeChatMessages(
       : undefined,
   };
 
+  // Helper to find real message occurrences for a given phrase
+  function findPhraseExamples(phrase: string): PhraseExample[] {
+    const words = phrase
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (words.length === 0) return [];
+    const pattern = new RegExp(`\\b${words.join("[^\\p{L}\\p{N}]+")}\\b`, "iu");
+    const fallbackPattern = new RegExp(words.join("\\s+"), "i");
+
+    let matching = nonOmittedMessages.filter((m) => pattern.test(m.text));
+    if (matching.length === 0) {
+      matching = nonOmittedMessages.filter((m) => fallbackPattern.test(m.text));
+    }
+    return pickDiverseExamples(matching, 3);
+  }
+
   // Card 7: Shared Lore ("Only You Two Say This")
   const sharedLore: SharedLoreItem[] = [];
   const sortedBigrams = Array.from(bigramStats.entries())
@@ -633,6 +713,7 @@ export function analyzeChatMessages(
       youCount: counts.you,
       themCount: counts.them,
       category: "Inside Phrase",
+      examples: findPhraseExamples(phrase),
     });
   }
 
@@ -647,6 +728,7 @@ export function analyzeChatMessages(
         youCount,
         themCount,
         category: "Signature Word",
+        examples: findPhraseExamples(word),
       });
     }
   }
@@ -663,6 +745,7 @@ export function analyzeChatMessages(
         youCount: idx % 2 === 0 ? fw.count : Math.ceil(fw.count / 2),
         themCount: idx % 2 === 1 ? fw.count : Math.floor(fw.count / 2),
         category: "Shared Vibe",
+        examples: findPhraseExamples(fw.word),
       });
     });
   }
@@ -672,7 +755,7 @@ export function analyzeChatMessages(
     (m): m is ParsedMessage => m !== null
   );
   allValidMsgs.sort((a, b) => b.charCount - a.charCount);
-  const winnerMsg = allValidMsgs[0] || activeMessages[0];
+  const winnerMsg = allValidMsgs[0] || firstTextMsg;
   const runnerUpMsg = allValidMsgs[1] || winnerMsg;
 
   const longestMessage: LongestMessageData = {
@@ -688,7 +771,10 @@ export function analyzeChatMessages(
           ? themName
           : youName
         : runnerUpMsg.sender,
-    runnerUpWordCount: runnerUpMsg === winnerMsg ? Math.max(1, Math.floor(winnerMsg.wordCount * 0.6)) : runnerUpMsg.wordCount,
+    runnerUpWordCount:
+      runnerUpMsg === winnerMsg
+        ? Math.max(1, Math.floor(winnerMsg.wordCount * 0.6))
+        : runnerUpMsg.wordCount,
   };
 
   // Card 9: Left On Read
@@ -783,9 +869,13 @@ export function analyzeChatMessages(
   ];
 
   // Card 14: What [Them] Really Means
-  const themShortEntries = Array.from(statsMap[themName].shortPhraseFreq.entries()).sort(
-    (a, b) => b[1] - a[1]
-  );
+  const themShortEntries = Array.from(statsMap[themName].shortPhraseFreq.entries())
+    .filter(
+      ([phrase]) =>
+        !isOmittedOrSystemPlaceholder(phrase) &&
+        !/\bomitted\b|\bdeleted\b|\bmissed\b|\bnull\b/i.test(phrase)
+    )
+    .sort((a, b) => b[1] - a[1]);
 
   const translations: TranslationItem[] = [];
   const usedOriginals = new Set<string>();
@@ -804,7 +894,7 @@ export function analyzeChatMessages(
     }
   }
 
-  // Fill remaining slots up to 3-4 using their top short phrases or top words
+  // Fill remaining slots up to 3-4 using their top short phrases
   for (const [phrase, count] of themShortEntries) {
     if (translations.length >= 3) break;
     if (usedOriginals.has(phrase)) continue;
@@ -845,7 +935,6 @@ export function analyzeChatMessages(
     let shortLabel: string;
 
     if (useDailyOrWeekly) {
-      // Group by 3-day or weekly window
       const monthName = d.toLocaleDateString("en-US", { month: "short" });
       const dayNum = d.getDate();
       key = `${m.dateStr.slice(0, 8)}${String(Math.ceil(dayNum / 3)).padStart(2, "0")}`;
@@ -932,18 +1021,20 @@ export function analyzeChatMessages(
   let archetype = "Certified Yap Co-Pilots";
   let summaryQuote =
     "High chemistry, matching banter velocity, and just enough chaos to keep the notifications exciting.";
-  let theMoveTitle = "Lock In The In-Person Hangout";
+  let theMoveTitle = "Send Card #7 & Double Down";
   let theMoveDescription =
-    "Stop letting your best jokes live solely inside WhatsApp bubbles. Pitch a specific plan for this week.";
+    "Use your shared inside jokes as an excuse to suggest coffee, dinner, or a spontaneous late-night drive.";
+  let stepOneTargetCard = 7;
 
   if (compatibilityScore >= 88) {
     grade = "A+";
     archetype = "Main Character Soulmates";
     summaryQuote =
       "Reciprocal effort, rapid-fire banter, and a shared vocabulary nobody else on earth could decode.";
-    theMoveTitle = "Skip the Small Talk — Plan Something Iconic";
+    theMoveTitle = "Send Card #7 & Plan Something Iconic";
     theMoveDescription =
-      "The algorithm rarely sees message balance this healthy. Send this Wrapped deck and lock in Friday night.";
+      "Your shared inside phrases are elite. Send Card #7 ('Only You Two Say This') and lock in Friday night.";
+    stepOneTargetCard = 7;
   } else if (compatibilityScore >= 80) {
     grade = "A";
     archetype = "High-Voltage Banter Duo";
@@ -952,22 +1043,25 @@ export function analyzeChatMessages(
     theMoveTitle = "Send Card #7 & Double Down";
     theMoveDescription =
       "Use your shared inside jokes as an excuse to suggest coffee, dinner, or a spontaneous late-night drive.";
+    stepOneTargetCard = 7;
   } else if (compatibilityScore >= 72) {
     grade = "B+";
     archetype = "Slow-Burn Cinema";
     summaryQuote =
       "Bursts of deep 2-hour texting marathons interrupted by mysterious side-quests and delayed replies.";
-    theMoveTitle = "Break the Lag Cycle";
+    theMoveTitle = "Send Card #7 & Break the Lag Cycle";
     theMoveDescription =
-      "Match their pace, stop over-analyzing the timestamps, and drop a voice note instead of a wall of text.";
+      "Revisit your shared inside phrases on Card #7 and drop a spontaneous voice note instead of waiting.";
+    stepOneTargetCard = 7;
   } else {
     grade = "B";
     archetype = "Situationship Olympics";
     summaryQuote =
       "Unpredictable reply latencies, dramatic silence gaps, and undeniable tension every time the phone lights up.";
-    theMoveTitle = "Call the Bluff or Touch Grass";
+    theMoveTitle = "Send Card #13 ('Blocked You?!') as a Power Move";
     theMoveDescription =
-      "Send the 'Blocked You' card as a power move. How they reply in the next 10 minutes tells you everything.";
+      "Call the bluff with the 'Blocked You' card. How they reply in the next 10 minutes tells you everything.";
+    stepOneTargetCard = 13;
   }
 
   const peakHour = hourBuckets.indexOf(Math.max(...hourBuckets));
@@ -982,6 +1076,12 @@ export function analyzeChatMessages(
   ];
   const peakDayOfWeek = DAYS_NAMES[dayBuckets.indexOf(Math.max(...dayBuckets))];
 
+  const hasSubtextPhrase = translations.length > 0 && Boolean(translations[0]?.original);
+  const retireWord = hasSubtextPhrase
+    ? translations[0].original.replace(/"/g, "")
+    : youMetrics.topWords[0]?.word || "okay";
+  const stepThreeTargetCard = hasSubtextPhrase ? 14 : 6;
+
   const verdict: FinalVerdictData = {
     archetype,
     grade,
@@ -993,20 +1093,23 @@ export function analyzeChatMessages(
       {
         title: theMoveTitle,
         subtitle: theMoveDescription,
-        badge: "Step 01",
+        badge: `Card #${String(stepOneTargetCard).padStart(2, "0")}`,
         color: "lavender",
+        targetCardNumber: stepOneTargetCard,
       },
       {
         title: `Peak Window: ${formatHour12(peakHour)} on ${peakDayOfWeek}`,
-        subtitle: `That's when ${themName} is statistically most responsive—time your next text accordingly.`,
-        badge: "Timing",
+        subtitle: `That's when ${themName} is statistically most responsive—check your reply speed breakdown.`,
+        badge: "Card #03",
         color: "sky",
+        targetCardNumber: 3,
       },
       {
-        title: `Retire "${translations[0]?.original.replace(/"/g, "") || "ok"}" for 48 Hours`,
-        subtitle: `Switch up your predictable openers and watch ${themName}'s response time drop in half.`,
-        badge: "Pro Tip",
+        title: `Retire "${retireWord}" for 48 Hours`,
+        subtitle: `Switch up your predictable replies and watch ${themName}'s response time drop in half.`,
+        badge: `Card #${String(stepThreeTargetCard).padStart(2, "0")}`,
         color: "mint",
+        targetCardNumber: stepThreeTargetCard,
       },
     ],
   };

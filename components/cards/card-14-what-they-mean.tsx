@@ -2,7 +2,7 @@
 
 import React from "react";
 import { ChatWrappedAnalysis } from "@/lib/types";
-import { Languages, Mic } from "lucide-react";
+import { Languages } from "lucide-react";
 
 export function Card14WhatTheyMean({
   data,
@@ -31,7 +31,7 @@ export function Card14WhatTheyMean({
         </div>
         <h2 className="font-display text-[26px] leading-[1.15] font-extrabold tracking-tight text-[#083A44]">
           What {them.name}{" "}
-          <span className="inline-block px-2 py-0.5 rounded-lg bg-[#EAFA91]/85 italic">
+          <span className="inline-block px-2 py-0.5 rounded-lg bg-[#EAFA91]/85">
             really
           </span>{" "}
           means
@@ -41,7 +41,7 @@ export function Card14WhatTheyMean({
         </p>
       </div>
 
-      {/* Subtext Cards */}
+      {/* Subtext Cards (Clean Full-Width Translation Boxes — No Microphone Icon) */}
       <div className="space-y-2.5 flex-1 flex flex-col justify-center">
         {items.map((item, idx) => (
           <div
@@ -68,13 +68,10 @@ export function Card14WhatTheyMean({
               </span>
             </div>
 
-            <div className="bg-white/90 rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <div className="bg-white/90 rounded-2xl px-4 py-3">
               <p className="text-xs font-semibold text-[#083A44] leading-snug break-words">
                 {item.meaning}
               </p>
-              <div className="w-7 h-7 rounded-full bg-[#083A44] text-white flex items-center justify-center shrink-0">
-                <Mic className="w-3.5 h-3.5" />
-              </div>
             </div>
           </div>
         ))}

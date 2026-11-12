@@ -2,8 +2,8 @@
 
 import React from "react";
 import { ChatWrappedAnalysis } from "@/lib/types";
-import { LotusBowlDoodle, PlayCircleIcon } from "@/components/ui/doodles";
-import { Download, Share2, Sparkles } from "lucide-react";
+import { LotusBowlDoodle } from "@/components/ui/doodles";
+import { ArrowRight, Download, Share2, Sparkles } from "lucide-react";
 
 const BG_MAP = {
   lavender: "bg-lavender",
@@ -17,11 +17,13 @@ export function Card16TheMove({
   onShareCard,
   isExporting,
   isExport = false,
+  onNavigateToCard,
 }: {
   data: ChatWrappedAnalysis;
   onShareCard: () => void;
   isExporting: boolean;
   isExport?: boolean;
+  onNavigateToCard?: (cardIndex: number) => void;
 }) {
   const { verdict } = data;
 
@@ -57,36 +59,74 @@ export function Card16TheMove({
         </div>
       </div>
 
-      {/* "Things you can do" Actionable Advice Cards */}
+      {/* "Things you should do next" Actionable Advice Cards with Direct Card Navigation */}
       <div className="space-y-2.5">
-        <p className="text-xs font-bold text-[#083A44]">
-          Things you should do next (The Move)
-        </p>
-        {verdict.actionItems.map((item, idx) => (
-          <div
-            key={item.title}
-            className="bg-white rounded-[22px] p-3.5 shadow-card flex items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <div
-                className={`w-11 h-11 rounded-2xl ${BG_MAP[item.color]} flex flex-col items-center justify-center shrink-0`}
-              >
-                <span className="text-[10px] font-bold text-[#083A44] uppercase">
-                  0{idx + 1}
-                </span>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-[#083A44]">Things you should do next (The Move)</p>
+          {!isExport && (
+            <span className="text-[11px] font-semibold text-ink-secondary">
+              Tap to jump to card
+            </span>
+          )}
+        </div>
+        {verdict.actionItems.map((item, idx) => {
+          const targetCard = item.targetCardNumber || (idx === 0 ? 7 : idx === 1 ? 3 : 14);
+          const cardBadgeLabel = `Card #${String(targetCard).padStart(2, "0")}`;
+
+          return (
+            <div
+              key={item.title}
+              role={isExport ? undefined : "button"}
+              tabIndex={isExport ? undefined : 0}
+              onClick={() => {
+                if (!isExport && onNavigateToCard) {
+                  onNavigateToCard(targetCard - 1);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (!isExport && onNavigateToCard && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  onNavigateToCard(targetCard - 1);
+                }
+              }}
+              className={`bg-white rounded-[22px] p-3.5 shadow-card flex items-center justify-between gap-3 border border-transparent ${
+                isExport
+                  ? ""
+                  : "cursor-pointer group hover:border-[#083A44]/30 active:scale-[0.99] transition-all"
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`w-11 h-11 rounded-2xl ${BG_MAP[item.color]} flex flex-col items-center justify-center shrink-0`}
+                >
+                  <span className="text-[10px] font-bold text-[#083A44] uppercase">0{idx + 1}</span>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-xs font-bold text-[#083A44] break-words leading-snug">
+                      {item.title}
+                    </p>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-canvas text-[#083A44]/80 font-semibold shrink-0">
+                      {cardBadgeLabel}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-ink-secondary font-medium break-words mt-0.5 leading-snug">
+                    {item.subtitle}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-[#083A44] break-words leading-snug">
-                  {item.title}
-                </p>
-                <p className="text-[11px] text-ink-secondary font-medium break-words mt-0.5 leading-snug">
-                  {item.subtitle}
-                </p>
-              </div>
+
+              {!isExport && (
+                <div
+                  className="w-8 h-8 rounded-full border border-[#083A44]/20 flex items-center justify-center text-[#083A44] group-hover:bg-[#083A44] group-hover:text-white transition-colors shrink-0"
+                  aria-label={`Jump to ${cardBadgeLabel}`}
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </div>
+              )}
             </div>
-            <PlayCircleIcon className="w-6 h-6 shrink-0" />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Sticky Share Story Button (hidden in exported poster PNG) */}
@@ -102,9 +142,7 @@ export function Card16TheMove({
             className="flex-1 min-h-[46px] rounded-full bg-petrol hover:bg-petrol-deep text-white font-bold text-xs flex items-center justify-center gap-2 shadow-card transition-all active:scale-[0.99] disabled:opacity-60"
           >
             <Share2 className="w-4 h-4" />
-            <span>
-              {isExporting ? "Rendering Story PNG..." : "Share Story Card"}
-            </span>
+            <span>{isExporting ? "Rendering Story PNG..." : "Share Story Card"}</span>
           </button>
         </div>
       )}

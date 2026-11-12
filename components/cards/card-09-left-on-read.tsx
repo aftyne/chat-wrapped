@@ -103,7 +103,7 @@ export function Card09LeftOnRead({
           <strong>{leftOnRead.worstIncident.victim}</strong> double-texted:
         </p>
         <div className="bg-white rounded-2xl p-3 flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold text-[#083A44] italic break-words leading-snug">
+          <p className="text-xs font-semibold text-[#083A44] break-words leading-snug">
             “{leftOnRead.worstIncident.doubleTextSnippet}”
           </p>
           <CheckCheck className="w-4 h-4 text-sky-deep shrink-0" />

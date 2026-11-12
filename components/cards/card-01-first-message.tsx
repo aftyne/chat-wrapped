@@ -3,7 +3,7 @@
 import React from "react";
 import { ChatWrappedAnalysis } from "@/lib/types";
 import { LotusBowlDoodle, MoodFaceBadge } from "@/components/ui/doodles";
-import { ArrowRight, Calendar, Clock, Sparkles } from "lucide-react";
+import { Calendar, Clock, Sparkles } from "lucide-react";
 
 export function Card01FirstMessage({
   data,
@@ -13,7 +13,7 @@ export function Card01FirstMessage({
   isExport?: boolean;
 }) {
   const { firstMessage, participants } = data;
-  const [you, them] = participants;
+  const [you] = participants;
   const isYouFirst = firstMessage.sender === you.name;
 
   return (
@@ -99,31 +99,26 @@ export function Card01FirstMessage({
         )}
       </div>
 
-      {/* Bottom Dual Mini Cards */}
+      {/* Bottom Dual Mini Cards (Clean & Static — No False Affordance Arrows) */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[108px]">
+        <div className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[104px]">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#083A44]/80">
               Icebreaker
             </span>
             <Sparkles className="w-4 h-4 text-[#083A44]" />
           </div>
-          <div className="flex items-end justify-between gap-2 mt-2">
-            <div className="min-w-0">
-              <p className="text-base font-bold text-[#083A44] leading-snug break-words">
-                {firstMessage.sender}
-              </p>
-              <p className="text-[11px] text-[#083A44]/75 font-medium mt-0.5">
-                Zero hesitation
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shrink-0">
-              <ArrowRight className="w-4 h-4 text-[#083A44]" />
-            </div>
+          <div className="mt-2">
+            <p className="text-base font-bold text-[#083A44] leading-snug break-words">
+              {firstMessage.sender}
+            </p>
+            <p className="text-[11px] text-[#083A44]/75 font-medium mt-0.5">
+              Zero hesitation
+            </p>
           </div>
         </div>
 
-        <div className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[108px] text-white">
+        <div className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[104px] text-white">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-white/80">
               Active Span
@@ -132,22 +127,17 @@ export function Card01FirstMessage({
               Live
             </span>
           </div>
-          <div className="flex items-end justify-between gap-2 mt-2">
-            <div>
-              <p className="text-xl font-bold leading-tight">
-                {data.totalDaysSpan}{" "}
-                <span className="text-xs font-normal">
-                  {data.totalDaysSpan === 1 ? "day" : "days"}
-                </span>
-              </p>
-              <p className="text-[11px] text-white/75 font-medium mt-0.5">
-                {data.activeDays} active{" "}
-                {data.activeDays === 1 ? "day" : "days"}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-petrol-soft flex items-center justify-center shrink-0">
-              <ArrowRight className="w-4 h-4 text-white" />
-            </div>
+          <div className="mt-2">
+            <p className="text-xl font-bold leading-tight">
+              {data.totalDaysSpan}{" "}
+              <span className="text-xs font-normal">
+                {data.totalDaysSpan === 1 ? "day" : "days"}
+              </span>
+            </p>
+            <p className="text-[11px] text-white/75 font-medium mt-0.5">
+              {data.activeDays} active{" "}
+              {data.activeDays === 1 ? "day" : "days"}
+            </p>
           </div>
         </div>
       </div>

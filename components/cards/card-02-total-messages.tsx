@@ -7,7 +7,6 @@ import {
   QuirkyFaceHangout,
   QuirkyFaceLaugh,
 } from "@/components/ui/doodles";
-import { ArrowRight } from "lucide-react";
 
 export function Card02TotalMessages({
   data,
@@ -48,50 +47,40 @@ export function Card02TotalMessages({
         </p>
       </div>
 
-      {/* Two signature side-by-side cards */}
+      {/* Two signature side-by-side cards (Clean & Static — No False Affordance Arrows) */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[158px] relative overflow-hidden">
+        <div className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[154px] relative overflow-hidden">
           <QuirkyFaceHangout className="w-14 h-14 -ml-1" />
           <div className="mt-3">
             <p className="text-xs font-semibold text-[#083A44]/80 break-words leading-snug">
               {you.name}
             </p>
-            <div className="flex items-end justify-between mt-1">
-              <div>
-                <p className="text-2xl font-bold text-[#083A44] leading-none">
-                  {you.percentage}%
-                </p>
-                <p className="text-[11px] font-medium text-[#083A44]/75 mt-1">
-                  {you.messageCount.toLocaleString()}{" "}
-                  {you.messageCount === 1 ? "text" : "texts"}
-                </p>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shrink-0">
-                <ArrowRight className="w-4 h-4 text-[#083A44]" />
-              </div>
+            <div className="mt-1">
+              <p className="text-2xl font-bold text-[#083A44] leading-none">
+                {you.percentage}%
+              </p>
+              <p className="text-[11px] font-medium text-[#083A44]/75 mt-1">
+                {you.messageCount.toLocaleString()}{" "}
+                {you.messageCount === 1 ? "text" : "texts"}
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[158px] text-white relative overflow-hidden">
+        <div className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[154px] text-white relative overflow-hidden">
           <QuirkyFaceLaugh className="w-14 h-14 -ml-1" />
           <div className="mt-3">
             <p className="text-xs font-medium text-white/85 break-words leading-snug">
               {them.name}
             </p>
-            <div className="flex items-end justify-between mt-1">
-              <div>
-                <p className="text-2xl font-bold text-white leading-none">
-                  {them.percentage}%
-                </p>
-                <p className="text-[11px] font-medium text-white/75 mt-1">
-                  {them.messageCount.toLocaleString()}{" "}
-                  {them.messageCount === 1 ? "text" : "texts"}
-                </p>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-petrol-soft flex items-center justify-center shrink-0">
-                <ArrowRight className="w-4 h-4 text-white" />
-              </div>
+            <div className="mt-1">
+              <p className="text-2xl font-bold text-white leading-none">
+                {them.percentage}%
+              </p>
+              <p className="text-[11px] font-medium text-white/75 mt-1">
+                {them.messageCount.toLocaleString()}{" "}
+                {them.messageCount === 1 ? "text" : "texts"}
+              </p>
             </div>
           </div>
         </div>

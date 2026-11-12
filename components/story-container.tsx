@@ -221,6 +221,7 @@ export function StoryContainer({
             onShareCard={handleShareCurrentCard}
             isExporting={isExporting}
             isExport={isExport}
+            onNavigateToCard={jumpToSlide}
           />
         );
       default:

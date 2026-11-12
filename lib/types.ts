@@ -26,12 +26,19 @@ export interface WordFrequency {
   count: number;
 }
 
+export interface PhraseExample {
+  sender: string;
+  text: string;
+  timestamp: string; // Formatted cleanly, e.g., "Oct 14, 2025 · 10:42 PM"
+}
+
 export interface SharedLoreItem {
   phrase: string;
   totalCount: number;
   youCount: number;
   themCount: number;
   category: "Inside Phrase" | "Signature Word" | "Shared Vibe";
+  examples: PhraseExample[];
 }
 
 export interface ParticipantMetrics {
@@ -156,6 +163,7 @@ export interface FinalVerdictData {
     subtitle: string;
     badge: string;
     color: "lavender" | "sky" | "mint" | "orchid";
+    targetCardNumber: number;
   }[];
 }
 
@@ -181,7 +189,7 @@ export interface ChatWrappedAnalysis {
   longestSilence: SilenceGapData;
   translations: TranslationItem[];
   timeline: TimelineBucket[];
-   timelineStats: {
+  timelineStats: {
     honeymoonLabel: string;
     peakLabel: string;
     peakCount: number;

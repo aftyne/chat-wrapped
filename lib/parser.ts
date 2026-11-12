@@ -3,44 +3,47 @@ import { ParsedMessage } from "./types";
 // Regex patterns for iOS and Android WhatsApp exports
 // iOS: [14/02/24, 21:15:03] Alex: Hey! or [2/14/24, 9:15:03 PM] Alex: Hey!
 const IOS_LINE_REGEX =
-  /^[\u200E\u200F]*\[(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}[:\.]\d{2}(?:[:\.]\d{2})?(?:[\s\u202F\u00A0]*[APap][Mm])?)\][\s\u200E\u200F]*([^:]+?):\s*([\s\S]*)$/;
+  /^[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]*\[(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}[:\.]\d{2}(?:[:\.]\d{2})?(?:[\s\u202F\u00A0]*[APap][Mm])?)\][\s\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]*([^:]+?):\s*([\s\S]*)$/;
 
 // Android: 14/02/2024, 21:15 - Alex: Hey! or 2/14/24, 9:15 PM - Alex: Hey! or 14/02/24 21.15 - Alex: Hey!
 const ANDROID_LINE_REGEX =
-  /^[\u200E\u200F]*(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}[:\.]\d{2}(?:[:\.]\d{2})?(?:[\s\u202F\u00A0]*[APap][Mm])?)\s*-\s*([^:]+?):\s*([\s\S]*)$/;
+  /^[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]*(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}[:\.]\d{2}(?:[:\.]\d{2})?(?:[\s\u202F\u00A0]*[APap][Mm])?)\s*-\s*([^:]+?):\s*([\s\S]*)$/;
 
 // System line without sender (e.g. encryption notices)
 const SYSTEM_LINE_REGEX =
-  /^[\u200E\u200F]*(?:\[?\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4},?\s+\d{1,2}[:\.]\d{2}(?:[:\.]\d{2})?(?:[\s\u202F\u00A0]*[APap][Mm])?\]?(?:\s*-\s*)?)\s*([\s\S]*)$/;
+  /^[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]*(?:\[?\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4},?\s+\d{1,2}[:\.]\d{2}(?:[:\.]\d{2})?(?:[\s\u202F\u00A0]*[APap][Mm])?\]?(?:\s*-\s*)?)\s*([\s\S]*)$/;
 
 const DELETED_PATTERNS = [
-  /^this message was deleted\.?$/i,
-  /^you deleted this message\.?$/i,
-  /^pesan ini telah dihapus\.?$/i,
-  /^anda menghapus pesan ini\.?$/i,
-  /^este mensaje fue eliminado\.?$/i,
-  /^eliminaste este mensaje\.?$/i,
-  /^ce message a été supprimé\.?$/i,
-  /^diese nachricht wurde gelöscht\.?$/i,
+  /^<?this message was deleted\.?>?$/i,
+  /^<?you deleted this message\.?>?$/i,
+  /^<?pesan ini telah dihapus\.?>?$/i,
+  /^<?anda menghapus pesan ini\.?>?$/i,
+  /^<?este mensaje fue eliminado\.?>?$/i,
+  /^<?eliminaste este mensaje\.?>?$/i,
+  /^<?ce message a été supprimé\.?>?$/i,
+  /^<?diese nachricht wurde gelöscht\.?>?$/i,
 ];
 
 const MEDIA_PATTERNS = [
-  /^<media omitted>$/i,
-  /^<media tidak disertakan>$/i,
-  /^image omitted$/i,
-  /^video omitted$/i,
-  /^audio omitted$/i,
-  /^sticker omitted$/i,
-  /^gif omitted$/i,
-  /^document omitted$/i,
-  /^contact card omitted$/i,
+  /^<?media omitted>?$/i,
+  /^<?image omitted>?$/i,
+  /^<?video omitted>?$/i,
+  /^<?audio omitted>?$/i,
+  /^<?sticker omitted>?$/i,
+  /^<?gif omitted>?$/i,
+  /^<?document omitted>?$/i,
+  /^<?contact card omitted>?$/i,
+  /^<?media tidak disertakan>?$/i,
   /\(file attached\)$/i,
+  /^<attached:\s*.+>$/i,
 ];
 
 const SYSTEM_CONTENT_PATTERNS = [
   /messages and calls are end-to-end encrypted/i,
   /pesan dan panggilan terenkripsi secara end-to-end/i,
   /your security code with .+ changed/i,
+  /^<?missed voice call\.?>?$/i,
+  /^<?missed video call\.?>?$/i,
   /missed voice call/i,
   /missed video call/i,
   /created group/i,
@@ -49,23 +52,46 @@ const SYSTEM_CONTENT_PATTERNS = [
   /^null$/i,
 ];
 
-function cleanInvisibleChars(input: string): string {
-  return input.replace(/[\u200E\u200F\u202A-\u202E\uFEFF]/g, "").trim();
+const INLINE_OMISSION_REGEX =
+  /<?\b(?:image|sticker|video|audio|gif|document|contact card|media)\s+omitted\b>?|<?\bmedia tidak disertakan\b>?|<?\b(?:this message was deleted|you deleted this message|missed voice call|missed video call)\b>?/gi;
+
+export function cleanInvisibleChars(input: string): string {
+  return input
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "")
+    .trim();
 }
 
-function isDeletedMessage(text: string): boolean {
+export function stripOmissionPlaceholders(input: string): string {
+  return cleanInvisibleChars(input).replace(INLINE_OMISSION_REGEX, " ").trim();
+}
+
+export function isDeletedMessage(text: string): boolean {
   const cleaned = cleanInvisibleChars(text);
   return DELETED_PATTERNS.some((re) => re.test(cleaned));
 }
 
-function isMediaMessage(text: string): boolean {
+export function isMediaMessage(text: string): boolean {
   const cleaned = cleanInvisibleChars(text);
   return MEDIA_PATTERNS.some((re) => re.test(cleaned));
 }
 
-function isSystemMessageContent(text: string): boolean {
+export function isSystemMessageContent(text: string): boolean {
   const cleaned = cleanInvisibleChars(text);
   return SYSTEM_CONTENT_PATTERNS.some((re) => re.test(cleaned));
+}
+
+export function isOmittedOrSystemPlaceholder(text: string): boolean {
+  const cleaned = cleanInvisibleChars(text);
+  if (!cleaned || /^null$/i.test(cleaned)) return true;
+  if (
+    isDeletedMessage(cleaned) ||
+    isMediaMessage(cleaned) ||
+    isSystemMessageContent(cleaned)
+  ) {
+    return true;
+  }
+  const stripped = stripOmissionPlaceholders(cleaned);
+  return stripped.length === 0;
 }
 
 function detectDateFormat(rawDates: string[]): "DMY" | "MDY" | "YMD" {
@@ -172,7 +198,7 @@ export function parseWhatsAppChat(rawText: string): ParsedMessage[] {
         dateRaw,
         timeRaw,
         sender: cleanInvisibleChars(senderRaw),
-        text: textRaw.trim(),
+        text: cleanInvisibleChars(textRaw),
       });
       continue;
     }
@@ -185,7 +211,7 @@ export function parseWhatsAppChat(rawText: string): ParsedMessage[] {
         dateRaw,
         timeRaw,
         sender: cleanInvisibleChars(senderRaw),
-        text: textRaw.trim(),
+        text: cleanInvisibleChars(textRaw),
       });
       continue;
     }
@@ -197,7 +223,8 @@ export function parseWhatsAppChat(rawText: string): ParsedMessage[] {
 
     // Continuation of multi-line message
     if (rawRecords.length > 0) {
-      rawRecords[rawRecords.length - 1].text += "\n" + line.trim();
+      rawRecords[rawRecords.length - 1].text +=
+        "\n" + cleanInvisibleChars(line);
     }
   }
 
@@ -213,7 +240,11 @@ export function parseWhatsAppChat(rawText: string): ParsedMessage[] {
     const isMedia = isMediaMessage(rec.text);
     const dt = parseDateTime(rec.dateRaw, rec.timeRaw, dateFormat);
 
-    const cleanedText = cleanInvisibleChars(rec.text);
+    const cleanedText = isDeleted || isMedia
+      ? cleanInvisibleChars(rec.text)
+      : stripOmissionPlaceholders(rec.text);
+    if (!isDeleted && !isMedia && !cleanedText) continue;
+
     const wordCount = isDeleted || isMedia ? 0 : countWords(cleanedText);
 
     parsedMessages.push({
