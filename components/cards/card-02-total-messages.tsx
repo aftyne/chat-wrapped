@@ -9,47 +9,65 @@ import {
 } from "@/components/ui/doodles";
 import { ArrowRight } from "lucide-react";
 
-export function Card02TotalMessages({ data }: { data: ChatWrappedAnalysis }) {
+export function Card02TotalMessages({
+  data,
+  isExport = false,
+}: {
+  data: ChatWrappedAnalysis;
+  isExport?: boolean;
+}) {
   const [you, them] = data.participants;
+  const novelPages = Math.max(1, Math.round(data.totalWords / 250));
 
   return (
-    <div className="flex flex-col justify-between min-h-full gap-3">
-      {/* Header matching "Good Morning, Frede / Select what you want more for now" */}
+    <div
+      className={`flex flex-col ${
+        isExport ? "justify-center gap-4" : "justify-between min-h-full gap-3.5"
+      }`}
+    >
+      {/* Header */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="inline-flex items-center px-3.5 py-1 rounded-full bg-lavender text-ink text-xs font-semibold">
-            Volume & Split
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-lavender text-[#083A44] text-xs font-semibold">
+            💬 Volume &amp; Split
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
-            {data.messagesPerDay} msgs / day
+            {data.messagesPerDay} {data.messagesPerDay === 1 ? "msg" : "msgs"} / day
           </span>
         </div>
-        <h2 className="font-display text-[26px] leading-[1.15] font-bold text-ink">
-          {data.totalMessages.toLocaleString()} messages exchanged
+        <h2 className="font-display text-[26px] leading-[1.15] font-extrabold tracking-tight text-[#083A44]">
+          <span className="inline-block px-2 py-0.5 rounded-lg bg-[#F6D5F7]/80">
+            {data.totalMessages.toLocaleString()}
+          </span>{" "}
+          {data.totalMessages === 1 ? "message" : "messages"} exchanged
         </h2>
-        <p className="text-xs text-ink-secondary mt-1 font-medium">
-          That’s {data.totalWords.toLocaleString()} total words—roughly{" "}
-          {Math.max(1, Math.round(data.totalWords / 250))} novel pages of pure lore.
+        <p className="text-xs text-ink-secondary mt-1.5 font-medium leading-relaxed">
+          That’s {data.totalWords.toLocaleString()} total{" "}
+          {data.totalWords === 1 ? "word" : "words"}—roughly {novelPages} novel{" "}
+          {novelPages === 1 ? "page" : "pages"} of pure lore.
         </p>
       </div>
 
-      {/* Two signature side-by-side cards (Orchid & Deep Petrol Teal from reference screen 1) */}
+      {/* Two signature side-by-side cards */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[158px] relative overflow-hidden">
           <QuirkyFaceHangout className="w-14 h-14 -ml-1" />
           <div className="mt-3">
-            <p className="text-xs font-semibold text-ink/75 truncate">{you.name}</p>
+            <p className="text-xs font-semibold text-[#083A44]/80 break-words leading-snug">
+              {you.name}
+            </p>
             <div className="flex items-end justify-between mt-1">
               <div>
-                <p className="text-2xl font-bold text-ink leading-none">
+                <p className="text-2xl font-bold text-[#083A44] leading-none">
                   {you.percentage}%
                 </p>
-                <p className="text-[11px] font-medium text-ink/75 mt-1">
-                  {you.messageCount.toLocaleString()} texts
+                <p className="text-[11px] font-medium text-[#083A44]/75 mt-1">
+                  {you.messageCount.toLocaleString()}{" "}
+                  {you.messageCount === 1 ? "text" : "texts"}
                 </p>
               </div>
-              <div className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center">
-                <ArrowRight className="w-4 h-4 text-ink" />
+              <div className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shrink-0">
+                <ArrowRight className="w-4 h-4 text-[#083A44]" />
               </div>
             </div>
           </div>
@@ -58,17 +76,20 @@ export function Card02TotalMessages({ data }: { data: ChatWrappedAnalysis }) {
         <div className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[158px] text-white relative overflow-hidden">
           <QuirkyFaceLaugh className="w-14 h-14 -ml-1" />
           <div className="mt-3">
-            <p className="text-xs font-medium text-white/80 truncate">{them.name}</p>
+            <p className="text-xs font-medium text-white/85 break-words leading-snug">
+              {them.name}
+            </p>
             <div className="flex items-end justify-between mt-1">
               <div>
                 <p className="text-2xl font-bold text-white leading-none">
                   {them.percentage}%
                 </p>
                 <p className="text-[11px] font-medium text-white/75 mt-1">
-                  {them.messageCount.toLocaleString()} texts
+                  {them.messageCount.toLocaleString()}{" "}
+                  {them.messageCount === 1 ? "text" : "texts"}
                 </p>
               </div>
-              <div className="w-8 h-8 rounded-full bg-petrol-soft flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-petrol-soft flex items-center justify-center shrink-0">
                 <ArrowRight className="w-4 h-4 text-white" />
               </div>
             </div>
@@ -76,14 +97,16 @@ export function Card02TotalMessages({ data }: { data: ChatWrappedAnalysis }) {
         </div>
       </div>
 
-      {/* White Balance Indicator Card (mirrors "Stress indicator" card on reference screen 1) */}
+      {/* White Balance Indicator Card */}
       <div className="bg-white rounded-card p-4 shadow-card">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5">
-            <MoodFaceBadge mood="happy" bg="#F2D2EC" className="w-8 h-8" />
-            <span className="text-sm font-bold text-ink">Texting Balance</span>
+            <MoodFaceBadge mood="happy" bg="#F2D2EC" className="w-8 h-8 shrink-0" />
+            <span className="text-sm font-bold text-[#083A44]">
+              Texting Balance
+            </span>
           </div>
-          <span className="px-3 py-1 rounded-full border border-ink/10 text-xs font-semibold text-ink">
+          <span className="px-3 py-1 rounded-full border border-ink/10 text-xs font-semibold text-[#083A44] text-right">
             {Math.abs(you.percentage - them.percentage) <= 12
               ? "50/50 Equilibrium"
               : you.percentage > them.percentage
@@ -104,15 +127,15 @@ export function Card02TotalMessages({ data }: { data: ChatWrappedAnalysis }) {
         <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-ink/[0.06] text-center">
           <div className="bg-canvas rounded-2xl py-2 px-2">
             <p className="text-[11px] text-ink-secondary font-medium">Avg / Day</p>
-            <p className="text-sm font-bold text-ink">{data.messagesPerDay}</p>
+            <p className="text-sm font-bold text-[#083A44]">{data.messagesPerDay}</p>
           </div>
           <div className="bg-canvas rounded-2xl py-2 px-2">
             <p className="text-[11px] text-ink-secondary font-medium">Peak Hour</p>
-            <p className="text-sm font-bold text-ink">{data.peakHourFormatted}</p>
+            <p className="text-sm font-bold text-[#083A44]">{data.peakHourFormatted}</p>
           </div>
           <div className="bg-canvas rounded-2xl py-2 px-2">
             <p className="text-[11px] text-ink-secondary font-medium">Peak Day</p>
-            <p className="text-sm font-bold text-ink">{data.peakDayOfWeek}</p>
+            <p className="text-sm font-bold text-[#083A44]">{data.peakDayOfWeek}</p>
           </div>
         </div>
       </div>

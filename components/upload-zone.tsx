@@ -195,9 +195,6 @@ export function UploadZone({
               </p>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-full border border-ink/10 text-[11px] font-bold text-ink flex items-center gap-1 shrink-0">
-            <Lock className="w-3 h-3" /> Local
-          </span>
         </div>
 
         {/* Decorative mini bars + CTA strip */}

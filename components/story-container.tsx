@@ -9,10 +9,10 @@ import {
   ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
-  Download,
   Share2,
 } from "lucide-react";
 
+import { ExportCardFrame } from "./export-card-frame";
 import { Card01FirstMessage } from "./cards/card-01-first-message";
 import { Card02TotalMessages } from "./cards/card-02-total-messages";
 import { Card03ResponseTime } from "./cards/card-03-response-time";
@@ -66,7 +66,7 @@ export function StoryContainer({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const captureRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const totalSlides = 16;
 
@@ -115,21 +115,27 @@ export function StoryContainer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [goToNext, goToPrev, onExit]);
 
-  // Export / Share current story card as high-res PNG
+  // Export / Share current story card as high-res 9:16 social story poster PNG
   const handleShareCurrentCard = useCallback(async () => {
-    if (!captureRef.current || isExporting) return;
+    if (!exportRef.current || isExporting) return;
     setIsExporting(true);
     try {
-      const dataUrl = await toPng(captureRef.current, {
+      if (typeof document !== "undefined" && document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
+      const dataUrl = await toPng(exportRef.current, {
         cacheBust: true,
         pixelRatio: 3,
-        backgroundColor: "#EEF4F5",
+        backgroundColor: "#F4F8F8",
       });
 
       const fileName = `chat-wrapped-${String(currentIndex + 1).padStart(
         2,
         "0"
-      )}-${SLIDE_TITLES[currentIndex].toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
+      )}-${SLIDE_TITLES[currentIndex]
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")}.png`;
 
       // Try native Web Share API with file support on mobile
       if (navigator.share && navigator.canShare) {
@@ -163,7 +169,7 @@ export function StoryContainer({
     }
   }, [currentIndex, data.chatTitle, isExporting]);
 
-  // Calculate visible window of 7 slide numbers (like 21..27 in Reference Screen 3)
+  // Calculate visible window of 7 slide numbers
   const windowSize = 7;
   const halfWindow = Math.floor(windowSize / 2);
   let startSlide = Math.max(0, currentIndex - halfWindow);
@@ -176,48 +182,49 @@ export function StoryContainer({
     (_, i) => startSlide + i
   );
 
-  const renderActiveCard = () => {
+  const renderActiveCard = (isExport = false) => {
     switch (currentIndex) {
       case 0:
-        return <Card01FirstMessage data={data} />;
+        return <Card01FirstMessage data={data} isExport={isExport} />;
       case 1:
-        return <Card02TotalMessages data={data} />;
+        return <Card02TotalMessages data={data} isExport={isExport} />;
       case 2:
-        return <Card03ResponseTime data={data} />;
+        return <Card03ResponseTime data={data} isExport={isExport} />;
       case 3:
-        return <Card04ConversationStarter data={data} />;
+        return <Card04ConversationStarter data={data} isExport={isExport} />;
       case 4:
-        return <Card05DeletedMessages data={data} />;
+        return <Card05DeletedMessages data={data} isExport={isExport} />;
       case 5:
-        return <Card06TopWords data={data} />;
+        return <Card06TopWords data={data} isExport={isExport} />;
       case 6:
-        return <Card07SharedLore data={data} />;
+        return <Card07SharedLore data={data} isExport={isExport} />;
       case 7:
-        return <Card08LongestMessage data={data} />;
+        return <Card08LongestMessage data={data} isExport={isExport} />;
       case 8:
-        return <Card09LeftOnRead data={data} />;
+        return <Card09LeftOnRead data={data} isExport={isExport} />;
       case 9:
-        return <Card10InterestLevel data={data} />;
+        return <Card10InterestLevel data={data} isExport={isExport} />;
       case 10:
-        return <Card11AttachmentStyle data={data} />;
+        return <Card11AttachmentStyle data={data} isExport={isExport} />;
       case 11:
-        return <Card12RedFlags data={data} />;
+        return <Card12RedFlags data={data} isExport={isExport} />;
       case 12:
-        return <Card13BlockedYou data={data} />;
+        return <Card13BlockedYou data={data} isExport={isExport} />;
       case 13:
-        return <Card14WhatTheyMean data={data} />;
+        return <Card14WhatTheyMean data={data} isExport={isExport} />;
       case 14:
-        return <Card15Timeline data={data} />;
+        return <Card15Timeline data={data} isExport={isExport} />;
       case 15:
         return (
           <Card16TheMove
             data={data}
             onShareCard={handleShareCurrentCard}
             isExporting={isExporting}
+            isExport={isExport}
           />
         );
       default:
-        return <Card01FirstMessage data={data} />;
+        return <Card01FirstMessage data={data} isExport={isExport} />;
     }
   };
 
@@ -263,7 +270,7 @@ export function StoryContainer({
           </button>
         </div>
 
-        {/* Circular Numbered Pill Strip (Directly inspired by "21 22 23 24 25 26 27" on Reference Screen 3) */}
+        {/* Circular Numbered Pill Strip */}
         <div className="flex items-center justify-between gap-1 mt-2.5">
           {visibleSlideIndices.map((idx) => {
             const isActive = idx === currentIndex;
@@ -294,7 +301,6 @@ export function StoryContainer({
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={`${currentIndex}-${data.participants[0].name}`}
-            ref={captureRef}
             custom={direction}
             initial={{ opacity: 0, x: direction * 24 }}
             animate={{ opacity: 1, x: 0 }}
@@ -302,9 +308,25 @@ export function StoryContainer({
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             className="w-full min-h-full flex flex-col justify-between bg-canvas"
           >
-            {renderActiveCard()}
+            {renderActiveCard(false)}
           </motion.div>
         </AnimatePresence>
+      </div>
+
+      {/* Dedicated Off-Screen 9:16 Export Poster Renderer */}
+      <div
+        aria-hidden="true"
+        className="fixed -left-[9999px] top-0 pointer-events-none overflow-visible"
+      >
+        <div ref={exportRef}>
+          <ExportCardFrame
+            data={data}
+            currentIndex={currentIndex}
+            slideTitle={SLIDE_TITLES[currentIndex]}
+          >
+            {renderActiveCard(true)}
+          </ExportCardFrame>
+        </div>
       </div>
 
       {/* Bottom Controls Bar (Prev / Next + Export Card) */}
@@ -342,7 +364,6 @@ export function StoryContainer({
             <>
               <Share2 className="w-3.5 h-3.5" />
               <span>Export Card</span>
-              <Download className="w-3 h-3 opacity-60" />
             </>
           )}
         </button>

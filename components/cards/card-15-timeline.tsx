@@ -20,11 +20,17 @@ const BAR_PALETTE = [
   "#CBE4EE",
 ];
 
-export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
+export function Card15Timeline({
+  data,
+  isExport = false,
+}: {
+  data: ChatWrappedAnalysis;
+  isExport?: boolean;
+}) {
   const { timeline, timelineStats } = data;
   const maxVal = Math.max(1, ...timeline.map((t) => t.count));
 
-  // Build SVG wave path above the bars (like the Stress indicator wave in Reference Screen 1)
+  // Build SVG wave path above the bars
   const points = timeline.map((b, idx) => {
     const x =
       timeline.length === 1
@@ -47,14 +53,18 @@ export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
   }
 
   return (
-    <div className="flex flex-col justify-between min-h-full gap-3">
+    <div
+      className={`flex flex-col ${
+        isExport ? "justify-center gap-4" : "justify-between min-h-full gap-3.5"
+      }`}
+    >
       <div>
-        {/* Day / Week / Month Segmented Pill Header (Reference Screen 3) */}
+        {/* Segmented Pill Header */}
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="py-1.5 rounded-full border border-ink/10 text-center text-xs font-semibold text-ink-secondary bg-white/60">
             Honeymoon
           </div>
-          <div className="py-1.5 rounded-full bg-orchid text-center text-xs font-bold text-ink">
+          <div className="py-1.5 rounded-full bg-orchid text-center text-xs font-bold text-[#083A44]">
             Full Lifecycle
           </div>
           <div className="py-1.5 rounded-full border border-ink/10 text-center text-xs font-semibold text-ink-secondary bg-white/60">
@@ -62,22 +72,27 @@ export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
           </div>
         </div>
 
-        <h2 className="font-display text-[25px] leading-[1.15] font-bold text-ink">
-          How It Went (The Wave)
+        <h2 className="font-display text-[26px] leading-[1.15] font-extrabold tracking-tight text-[#083A44]">
+          How It Went{" "}
+          <span className="inline-block px-2 py-0.5 rounded-lg bg-[#EAFA91]/85">
+            (The Wave)
+          </span>
         </h2>
-        <p className="text-xs text-ink-secondary mt-1 font-medium">
+        <p className="text-xs text-ink-secondary mt-1.5 font-medium leading-relaxed">
           Your month-by-month momentum from {timelineStats.honeymoonLabel} to right now.
         </p>
       </div>
 
-      {/* Signature Chart Card mirroring "Stress indicator" on Reference Screen 1 */}
+      {/* Signature Chart Card */}
       <div className="bg-white rounded-card p-4 shadow-card">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <MoodFaceBadge mood="happy" bg="#F2D2EC" className="w-8 h-8" />
-            <span className="text-sm font-bold text-ink">Momentum Indicator</span>
+            <MoodFaceBadge mood="happy" bg="#F2D2EC" className="w-8 h-8 shrink-0" />
+            <span className="text-sm font-bold text-[#083A44]">
+              Momentum Indicator
+            </span>
           </div>
-          <span className="px-3 py-1 rounded-full border border-ink/10 text-xs font-bold text-ink">
+          <span className="px-3 py-1 rounded-full border border-ink/10 text-xs font-bold text-[#083A44]">
             {timelineStats.currentTrend}
           </span>
         </div>
@@ -100,7 +115,10 @@ export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
 
           <div className="flex items-end justify-between gap-1.5 h-28 pt-6">
             {timeline.map((bucket, idx) => {
-              const heightPct = Math.max(18, Math.round((bucket.count / maxVal) * 100));
+              const heightPct = Math.max(
+                18,
+                Math.round((bucket.count / maxVal) * 100)
+              );
               const barColor = BAR_PALETTE[idx % BAR_PALETTE.length];
 
               return (
@@ -114,7 +132,9 @@ export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
                       backgroundColor: barColor,
                     }}
                     className="w-full max-w-[16px] rounded-full transition-all duration-500"
-                    title={`${bucket.label}: ${bucket.count} messages`}
+                    title={`${bucket.label}: ${bucket.count} ${
+                      bucket.count === 1 ? "message" : "messages"
+                    }`}
                   />
                 </div>
               );
@@ -130,32 +150,43 @@ export function Card15Timeline({ data }: { data: ChatWrappedAnalysis }) {
         </div>
       </div>
 
-      {/* 3 Lifecycle Milestones (mirrors "My relax plan" 3-card row on Reference Screen 1) */}
+      {/* 3 Lifecycle Milestones */}
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-orchid rounded-[22px] p-3">
-          <p className="text-[10px] font-bold text-ink/70 uppercase">Honeymoon</p>
-          <p className="text-xs font-bold text-ink mt-1 truncate">
+          <p className="text-[10px] font-bold text-[#083A44]/70 uppercase">
+            Honeymoon
+          </p>
+          <p className="text-xs font-bold text-[#083A44] mt-1 break-words leading-tight">
             {timelineStats.honeymoonLabel}
           </p>
-          <p className="text-[10px] text-ink/75 font-medium mt-0.5">Day 1 spark</p>
+          <p className="text-[10px] text-[#083A44]/75 font-medium mt-0.5">
+            Day 1 spark
+          </p>
         </div>
 
         <div className="bg-lavender rounded-[22px] p-3">
-          <p className="text-[10px] font-bold text-ink/70 uppercase">The Peak</p>
-          <p className="text-xs font-bold text-ink mt-1 truncate">
+          <p className="text-[10px] font-bold text-[#083A44]/70 uppercase">
+            The Peak
+          </p>
+          <p className="text-xs font-bold text-[#083A44] mt-1 break-words leading-tight">
             {timelineStats.peakLabel}
           </p>
-          <p className="text-[10px] text-ink/75 font-medium mt-0.5">
-            {timelineStats.peakCount} texts
+          <p className="text-[10px] text-[#083A44]/75 font-medium mt-0.5">
+            {timelineStats.peakCount}{" "}
+            {timelineStats.peakCount === 1 ? "text" : "texts"}
           </p>
         </div>
 
         <div className="bg-sky rounded-[22px] p-3">
-          <p className="text-[10px] font-bold text-ink/70 uppercase">Dry Spell</p>
-          <p className="text-xs font-bold text-ink mt-1 truncate">
+          <p className="text-[10px] font-bold text-[#083A44]/70 uppercase">
+            Dry Spell
+          </p>
+          <p className="text-xs font-bold text-[#083A44] mt-1 break-words leading-tight">
             {timelineStats.drySpellLabel}
           </p>
-          <p className="text-[10px] text-ink/75 font-medium mt-0.5">Quiet era</p>
+          <p className="text-[10px] text-[#083A44]/75 font-medium mt-0.5">
+            Quiet era
+          </p>
         </div>
       </div>
     </div>

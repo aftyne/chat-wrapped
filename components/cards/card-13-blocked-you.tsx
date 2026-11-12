@@ -5,7 +5,13 @@ import { ChatWrappedAnalysis } from "@/lib/types";
 import { MoodFaceBadge } from "@/components/ui/doodles";
 import { ShieldAlert, Unlock } from "lucide-react";
 
-export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
+export function Card13BlockedYou({
+  data,
+  isExport = false,
+}: {
+  data: ChatWrappedAnalysis;
+  isExport?: boolean;
+}) {
   const [viewer, other] = data.participants;
   const { longestSilence } = data;
 
@@ -61,20 +67,26 @@ export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
     : "You finally broke the silence";
 
   return (
-    <div className="flex flex-col justify-between min-h-full gap-3">
+    <div
+      className={`flex flex-col ${
+        isExport ? "justify-center gap-4" : "justify-between min-h-full gap-3.5"
+      }`}
+    >
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-ink text-xs font-semibold">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-orchid text-[#083A44] text-xs font-semibold">
             <ShieldAlert className="w-3.5 h-3.5" /> High Tension
           </span>
           <span className="text-xs font-semibold text-ink-secondary">
             The Drought
           </span>
         </div>
-        <h2 className="font-display text-[25px] leading-[1.15] font-bold text-ink">
-          {headline}
+        <h2 className="font-display text-[26px] leading-[1.15] font-extrabold tracking-tight text-[#083A44]">
+          <span className="decoration-[#F6D5F7] underline decoration-4 underline-offset-4">
+            {headline}
+          </span>
         </h2>
-        <p className="text-xs text-ink-secondary mt-1 font-medium">
+        <p className="text-xs text-ink-secondary mt-1.5 font-medium leading-relaxed">
           Just kidding—but you two went completely radio silent for a record-breaking streak.
         </p>
       </div>
@@ -85,7 +97,7 @@ export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
           <span className="px-3 py-1 rounded-full bg-white/15 text-white text-xs font-semibold">
             Longest Radio Silence
           </span>
-          <MoodFaceBadge mood="shock" bg="#F2D2EC" className="w-8 h-8" />
+          <MoodFaceBadge mood="shock" bg="#F2D2EC" className="w-8 h-8 shrink-0" />
         </div>
 
         <div className="my-2">
@@ -98,10 +110,10 @@ export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
         </div>
 
         <div className="mt-3 pt-3 border-t border-white/15 text-xs text-white/90">
-          <p className="text-[11px] uppercase tracking-wider text-white/60 font-semibold">
+          <p className="text-[11px] uppercase tracking-wider text-white/60 font-semibold break-words">
             LAST WORDS BEFORE THE DROUGHT ({lastWordsSenderTag}):
           </p>
-          <p className="italic font-medium mt-0.5 line-clamp-2">
+          <p className="italic font-medium mt-0.5 break-words leading-snug">
             “{longestSilence.lastMessageBeforeSilence}”
           </p>
         </div>
@@ -109,22 +121,22 @@ export function Card13BlockedYou({ data }: { data: ChatWrappedAnalysis }) {
 
       {/* How the silence broke */}
       <div className="bg-white rounded-card p-4 shadow-card">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-full bg-mint flex items-center justify-center">
-              <Unlock className="w-3.5 h-3.5 text-ink" />
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-7 h-7 rounded-full bg-mint flex items-center justify-center shrink-0">
+              <Unlock className="w-3.5 h-3.5 text-[#083A44]" />
             </span>
-            <span className="text-xs font-bold text-ink">
+            <span className="text-xs font-bold text-[#083A44] break-words leading-snug">
               {silenceBreakerLabel}
             </span>
           </div>
-          <span className="text-[11px] font-semibold text-ink-secondary">
+          <span className="text-[11px] font-semibold text-ink-secondary shrink-0">
             {longestSilence.endDate}
           </span>
         </div>
 
         <div className="bg-canvas rounded-2xl p-3 border border-ink/[0.05]">
-          <p className="text-xs font-semibold text-ink line-clamp-2">
+          <p className="text-xs font-semibold text-[#083A44] break-words leading-snug">
             “{longestSilence.breakerMessage}”
           </p>
         </div>
