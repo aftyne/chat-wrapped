@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { ChatWrappedAnalysis, ExtractionState } from "@/lib/types";
 import { extractChatTextFromFile, isZipFile } from "@/lib/file-extractor";
 import { parseWhatsAppChat } from "@/lib/parser";
@@ -8,19 +9,32 @@ import { analyzeChatMessages } from "@/lib/analyzer";
 import { generateSampleWhatsAppChat } from "@/lib/sample-chat";
 import { UploadZone } from "@/components/upload-zone";
 import { StoryContainer } from "@/components/story-container";
+import { ProcessingModal } from "@/components/processing-modal";
+import { ErrorModal } from "@/components/error-modal";
 import type { WorkerResponse } from "@/workers/analyzer.worker";
 
 export default function HomePage() {
   const [analysis, setAnalysis] = useState<ChatWrappedAnalysis | null>(null);
   const [extractionState, setExtractionState] =
     useState<ExtractionState>("idle");
+  const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rawTextRef = useRef<string>("");
+
+  const handleFinishSuccess = useCallback((result: ChatWrappedAnalysis) => {
+    setIsReady(true);
+    setTimeout(() => {
+      setAnalysis(result);
+      setExtractionState("ready");
+      setIsReady(false);
+    }, 280);
+  }, []);
 
   const runAnalysis = useCallback(
     (rawText: string, preferredYouName?: string) => {
       setExtractionState("parsing");
       setError(null);
+      setIsReady(false);
       rawTextRef.current = rawText;
 
       // Offload to Web Worker when available
@@ -33,11 +47,11 @@ export default function HomePage() {
           worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
             const res = event.data;
             if (res.status === "success" && res.analysis) {
-              setAnalysis(res.analysis);
-              setExtractionState("ready");
+              handleFinishSuccess(res.analysis);
             } else {
               setError(res.error || "Could not analyze this chat file.");
               setExtractionState("error");
+              setIsReady(false);
             }
             worker.terminate();
           };
@@ -47,13 +61,13 @@ export default function HomePage() {
             try {
               const parsed = parseWhatsAppChat(rawText);
               const result = analyzeChatMessages(parsed, preferredYouName);
-              setAnalysis(result);
-              setExtractionState("ready");
+              handleFinishSuccess(result);
             } catch (err) {
               setError(
                 err instanceof Error ? err.message : "Failed to parse chat."
               );
               setExtractionState("error");
+              setIsReady(false);
             } finally {
               worker.terminate();
             }
@@ -70,50 +84,39 @@ export default function HomePage() {
       try {
         const parsed = parseWhatsAppChat(rawText);
         const result = analyzeChatMessages(parsed, preferredYouName);
-        setAnalysis(result);
-        setExtractionState("ready");
+        handleFinishSuccess(result);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to parse chat.");
         setExtractionState("error");
+        setIsReady(false);
       }
     },
-    []
+    [handleFinishSuccess]
   );
 
   const handleFileUpload = useCallback(
     async (file: File) => {
       setError(null);
-      let unzipTimer: ReturnType<typeof setTimeout> | null = null;
+      setIsReady(false);
 
       try {
+        // Immediately set state without artificial delays
         if (isZipFile(file)) {
-          // Show 'unzipping' indicator if unpacking takes >200ms
-          unzipTimer = setTimeout(() => {
-            setExtractionState("unzipping");
-          }, 200);
+          setExtractionState("unzipping");
         } else {
           setExtractionState("parsing");
         }
 
         const extractedText = await extractChatTextFromFile(file);
-
-        if (unzipTimer) {
-          clearTimeout(unzipTimer);
-          unzipTimer = null;
-        }
-
         runAnalysis(extractedText);
       } catch (err) {
-        if (unzipTimer) {
-          clearTimeout(unzipTimer);
-          unzipTimer = null;
-        }
         setError(
           err instanceof Error
             ? err.message
             : "No valid WhatsApp chat log found inside this .zip"
         );
         setExtractionState("error");
+        setIsReady(false);
       }
     },
     [runAnalysis]
@@ -127,8 +130,26 @@ export default function HomePage() {
   const handleSwapPerspective = useCallback(() => {
     if (!analysis || !rawTextRef.current) return;
     const currentOther = analysis.participants[1].name;
-    runAnalysis(rawTextRef.current, currentOther);
+    try {
+      const parsed = parseWhatsAppChat(rawTextRef.current);
+      const result = analyzeChatMessages(parsed, currentOther);
+      setAnalysis(result);
+    } catch {
+      // Fallback
+      runAnalysis(rawTextRef.current, currentOther);
+    }
   }, [analysis, runAnalysis]);
+
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setExtractionState("idle");
+    setIsReady(false);
+  }, []);
+
+  const isProcessing =
+    extractionState === "unzipping" ||
+    extractionState === "parsing" ||
+    isReady;
 
   return (
     <main className="relative w-full h-[100dvh] flex items-center justify-center overflow-hidden bg-[#B5C1CB]">
@@ -148,6 +169,7 @@ export default function HomePage() {
             onExit={() => {
               setAnalysis(null);
               setExtractionState("idle");
+              setIsReady(false);
             }}
             onSwapPerspective={handleSwapPerspective}
           />
@@ -160,6 +182,20 @@ export default function HomePage() {
           />
         )}
       </div>
+
+      {/* Full-Screen Blocking Loading Modal Overlay */}
+      <AnimatePresence>
+        {isProcessing && (
+          <ProcessingModal state={extractionState} isReady={isReady} />
+        )}
+      </AnimatePresence>
+
+      {/* Full-Screen Error Modal Alert */}
+      <AnimatePresence>
+        {extractionState === "error" && error && (
+          <ErrorModal error={error} onRetry={handleRetry} />
+        )}
+      </AnimatePresence>
     </main>
   );
 }

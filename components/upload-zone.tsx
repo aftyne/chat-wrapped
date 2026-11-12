@@ -13,7 +13,6 @@ import {
 import {
   ArrowRight,
   Bell,
-  FileText,
   Lock,
   Sparkles,
   Upload,
@@ -77,9 +76,10 @@ export function UploadZone({
         <button
           type="button"
           onClick={onLoadSample}
+          disabled={isBusy}
           title="Load instant demo chat"
           aria-label="Load instant demo chat"
-          className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center relative hover:bg-orchid/40 transition-colors shrink-0"
+          className="w-11 h-11 rounded-full bg-white shadow-pill flex items-center justify-center relative hover:bg-orchid/40 disabled:opacity-50 disabled:pointer-events-none transition-colors shrink-0"
         >
           <Bell className="w-4 h-4 text-ink" />
           <span className="w-2.5 h-2.5 rounded-full bg-orchid-vivid absolute top-1.5 right-1.5 border-2 border-white" />
@@ -97,7 +97,7 @@ export function UploadZone({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={isBusy}
-          className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[146px] text-left hover:brightness-[0.98] active:scale-[0.99] transition-all shadow-card group"
+          className="bg-orchid rounded-card p-4 flex flex-col justify-between min-h-[146px] text-left hover:brightness-[0.98] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none transition-all shadow-card group"
         >
           <QuirkyFaceHangout className="w-14 h-14 -ml-1" />
           <div className="flex items-end justify-between w-full mt-2">
@@ -119,7 +119,7 @@ export function UploadZone({
           type="button"
           onClick={onLoadSample}
           disabled={isBusy}
-          className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[146px] text-left text-white hover:bg-petrol-deep active:scale-[0.99] transition-all shadow-card group"
+          className="bg-petrol rounded-card p-4 flex flex-col justify-between min-h-[146px] text-left text-white hover:bg-petrol-deep active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none transition-all shadow-card group"
         >
           <QuirkyFaceLaugh className="w-14 h-14 -ml-1" />
           <div className="flex items-end justify-between w-full mt-2">
@@ -142,12 +142,25 @@ export function UploadZone({
       <div
         onDragOver={(e) => {
           e.preventDefault();
+          if (isBusy) return;
           setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`bg-white rounded-card p-4 shadow-card border-2 transition-all cursor-pointer my-2 ${
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+          if (isBusy) return;
+          const file = e.dataTransfer.files?.[0];
+          if (file) {
+            handleFile(file);
+          }
+        }}
+        onClick={() => {
+          if (!isBusy) fileInputRef.current?.click();
+        }}
+        className={`bg-white rounded-card p-4 shadow-card border-2 transition-all my-2 ${
+          isBusy ? "opacity-75 cursor-not-allowed" : "cursor-pointer"
+        } ${
           isDragging
             ? "border-petrol bg-orchid/20 scale-[0.99]"
             : "border-transparent hover:border-orchid"
@@ -156,6 +169,7 @@ export function UploadZone({
         <input
           ref={fileInputRef}
           type="file"
+          disabled={isBusy}
           accept=".txt,.zip,application/zip,application/x-zip-compressed"
           className="hidden"
           onChange={(e) => {
@@ -174,11 +188,7 @@ export function UploadZone({
             />
             <div className="min-w-0">
               <p className="text-xs font-bold text-ink truncate">
-                {extractionState === "unzipping"
-                  ? "Unpacking zip archive..."
-                  : extractionState === "parsing"
-                  ? "Web Worker crunching timestamps..."
-                  : "Drop WhatsApp .zip or .txt file here"}
+                Drop WhatsApp .zip or .txt file here
               </p>
               <p className="text-[11px] text-ink-secondary font-medium truncate">
                 Supports iOS &amp; Android .zip / .txt (100k+ lines)
@@ -195,24 +205,13 @@ export function UploadZone({
           <div className="flex items-center gap-2 text-xs font-semibold text-ink min-w-0">
             <Upload className="w-4 h-4 text-petrol shrink-0" />
             <span className="truncate">
-              {extractionState === "unzipping"
-                ? "Unpacking zip archive..."
-                : extractionState === "parsing"
-                ? "Parsing vocabulary, ghost gaps & attachment styles..."
-                : "Tap to browse your device (.zip or .txt)"}
+              Tap to browse your device (.zip or .txt)
             </span>
           </div>
           <span className="px-2.5 py-1 rounded-full bg-lime text-ink text-[11px] font-bold shrink-0">
             Free
           </span>
         </div>
-
-        {error && (
-          <div className="mt-2.5 px-3 py-2 rounded-xl bg-orchid/60 text-ink text-xs font-semibold flex items-center gap-2">
-            <FileText className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
       </div>
 
       {/* Bottom Tabbed Onboarding Section (Mirrors "My relax plan / Explore plans / Popular plans" + 3 Pastel Cards on Reference Screen 1) */}
@@ -220,8 +219,9 @@ export function UploadZone({
         <div className="flex items-center justify-between mb-2.5 px-0.5">
           <button
             type="button"
+            disabled={isBusy}
             onClick={() => setGuideTab("ios")}
-            className={`text-xs font-bold transition-colors min-h-[36px] px-2 ${
+            className={`text-xs font-bold transition-colors min-h-[36px] px-2 disabled:opacity-50 disabled:pointer-events-none ${
               guideTab === "ios"
                 ? "text-ink underline decoration-2 underline-offset-4"
                 : "text-ink-secondary hover:text-ink"
@@ -231,8 +231,9 @@ export function UploadZone({
           </button>
           <button
             type="button"
+            disabled={isBusy}
             onClick={() => setGuideTab("android")}
-            className={`text-xs font-bold transition-colors min-h-[36px] px-2 ${
+            className={`text-xs font-bold transition-colors min-h-[36px] px-2 disabled:opacity-50 disabled:pointer-events-none ${
               guideTab === "android"
                 ? "text-ink underline decoration-2 underline-offset-4"
                 : "text-ink-secondary hover:text-ink"
@@ -242,8 +243,9 @@ export function UploadZone({
           </button>
           <button
             type="button"
+            disabled={isBusy}
             onClick={() => setGuideTab("privacy")}
-            className={`text-xs font-bold transition-colors min-h-[36px] px-2 ${
+            className={`text-xs font-bold transition-colors min-h-[36px] px-2 disabled:opacity-50 disabled:pointer-events-none ${
               guideTab === "privacy"
                 ? "text-ink underline decoration-2 underline-offset-4"
                 : "text-ink-secondary hover:text-ink"
