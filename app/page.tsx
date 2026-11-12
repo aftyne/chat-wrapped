@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatWrappedAnalysis, ExtractionState } from "@/lib/types";
 import { extractChatTextFromFile, isZipFile } from "@/lib/file-extractor";
@@ -11,7 +11,7 @@ import { UploadZone } from "@/components/upload-zone";
 import { StoryContainer } from "@/components/story-container";
 import { ProcessingModal } from "@/components/processing-modal";
 import { ErrorModal } from "@/components/error-modal";
-import type { WorkerResponse } from "@/workers/analyzer.worker";
+import type { WorkerRequest, WorkerResponse } from "@/workers/analyzer.worker";
 
 export default function HomePage() {
   const [analysis, setAnalysis] = useState<ChatWrappedAnalysis | null>(null);
@@ -19,7 +19,7 @@ export default function HomePage() {
     useState<ExtractionState>("idle");
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const rawTextRef = useRef<string>("");
+  const workerRef = useRef<Worker | null>(null);
 
   const handleFinishSuccess = useCallback((result: ChatWrappedAnalysis) => {
     setIsReady(true);
@@ -30,60 +30,86 @@ export default function HomePage() {
     }, 280);
   }, []);
 
-  const runAnalysis = useCallback(
-    (rawText: string, preferredYouName?: string) => {
-      setExtractionState("parsing");
-      setError(null);
-      setIsReady(false);
-      rawTextRef.current = rawText;
-
-      // Offload to Web Worker when available
-      if (typeof window !== "undefined" && typeof Worker !== "undefined") {
-        try {
-          const worker = new Worker(
-            new URL("../workers/analyzer.worker.ts", import.meta.url)
-          );
-
-          worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-            const res = event.data;
-            if (res.status === "success" && res.analysis) {
-              handleFinishSuccess(res.analysis);
-            } else {
-              setError(res.error || "Could not analyze this chat file.");
-              setExtractionState("error");
-              setIsReady(false);
-            }
-            worker.terminate();
-          };
-
-          worker.onerror = () => {
-            // Fallback to main thread if bundler worker URL fails
-            try {
-              const parsed = parseWhatsAppChat(rawText);
-              const result = analyzeChatMessages(parsed, preferredYouName);
-              handleFinishSuccess(result);
-            } catch (err) {
-              setError(
-                err instanceof Error ? err.message : "Failed to parse chat."
-              );
-              setExtractionState("error");
-              setIsReady(false);
-            } finally {
-              worker.terminate();
-            }
-          };
-
-          worker.postMessage({ rawText, preferredYouName });
+  const getOrCreateWorker = useCallback((): Worker | null => {
+    if (typeof window === "undefined" || typeof Worker === "undefined") {
+      return null;
+    }
+    if (workerRef.current) {
+      return workerRef.current;
+    }
+    try {
+      const worker = new Worker(
+        new URL("../workers/analyzer.worker.ts", import.meta.url)
+      );
+      worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+        const res = event.data;
+        if (res.status === "parsing") {
+          setExtractionState("parsing");
           return;
-        } catch {
-          // Fallback below
         }
+        if (res.status === "swapped" && res.analysis) {
+          setAnalysis(res.analysis);
+          return;
+        }
+        if (res.status === "success" && res.analysis) {
+          handleFinishSuccess(res.analysis);
+        } else {
+          setError(res.error || "Could not analyze this chat file.");
+          setExtractionState("error");
+          setIsReady(false);
+        }
+      };
+      workerRef.current = worker;
+      return worker;
+    } catch {
+      return null;
+    }
+  }, [handleFinishSuccess]);
+
+  useEffect(() => {
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, []);
+
+  const runWorkerRequest = useCallback(
+    async (request: WorkerRequest) => {
+      const worker = getOrCreateWorker();
+      if (worker) {
+        worker.onerror = async () => {
+          // Fallback if worker fails
+          try {
+            const rawText =
+              request.rawText ||
+              (request.file ? await extractChatTextFromFile(request.file) : "");
+            const parsed = parseWhatsAppChat(rawText);
+            const result = analyzeChatMessages(
+              parsed,
+              request.preferredYouName
+            );
+            handleFinishSuccess(result);
+          } catch (err) {
+            setError(
+              err instanceof Error ? err.message : "Failed to parse chat."
+            );
+            setExtractionState("error");
+            setIsReady(false);
+          }
+        };
+        worker.postMessage(request);
+        return;
       }
 
-      // Direct fallback
+      // Non-worker fallback
       try {
+        const rawText =
+          request.rawText ||
+          (request.file ? await extractChatTextFromFile(request.file) : "");
         const parsed = parseWhatsAppChat(rawText);
-        const result = analyzeChatMessages(parsed, preferredYouName);
+        const result = analyzeChatMessages(parsed, request.preferredYouName);
         handleFinishSuccess(result);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to parse chat.");
@@ -91,54 +117,45 @@ export default function HomePage() {
         setIsReady(false);
       }
     },
-    [handleFinishSuccess]
+    [getOrCreateWorker, handleFinishSuccess]
   );
 
   const handleFileUpload = useCallback(
-    async (file: File) => {
+    (file: File) => {
       setError(null);
       setIsReady(false);
 
-      try {
-        // Immediately set state without artificial delays
-        if (isZipFile(file)) {
-          setExtractionState("unzipping");
-        } else {
-          setExtractionState("parsing");
-        }
-
-        const extractedText = await extractChatTextFromFile(file);
-        runAnalysis(extractedText);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "No valid WhatsApp chat log found inside this .zip"
-        );
-        setExtractionState("error");
-        setIsReady(false);
+      // Offload 100% of unzip, UTF-8 decode, parsing, and analysis to the Web Worker
+      if (isZipFile(file)) {
+        setExtractionState("unzipping");
+      } else {
+        setExtractionState("parsing");
       }
+
+      void runWorkerRequest({ action: "analyze", file });
     },
-    [runAnalysis]
+    [runWorkerRequest]
   );
 
   const handleLoadSample = useCallback(() => {
+    setError(null);
+    setIsReady(false);
+    setExtractionState("parsing");
     const sampleTxt = generateSampleWhatsAppChat();
-    runAnalysis(sampleTxt);
-  }, [runAnalysis]);
+    void runWorkerRequest({ action: "analyze", rawText: sampleTxt });
+  }, [runWorkerRequest]);
 
   const handleSwapPerspective = useCallback(() => {
-    if (!analysis || !rawTextRef.current) return;
+    if (!analysis) return;
     const currentOther = analysis.participants[1].name;
-    try {
-      const parsed = parseWhatsAppChat(rawTextRef.current);
-      const result = analyzeChatMessages(parsed, currentOther);
-      setAnalysis(result);
-    } catch {
-      // Fallback
-      runAnalysis(rawTextRef.current, currentOther);
+    const worker = getOrCreateWorker();
+    if (worker) {
+      worker.postMessage({
+        action: "swap",
+        preferredYouName: currentOther,
+      } satisfies WorkerRequest);
     }
-  }, [analysis, runAnalysis]);
+  }, [analysis, getOrCreateWorker]);
 
   const handleRetry = useCallback(() => {
     setError(null);

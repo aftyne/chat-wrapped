@@ -14,10 +14,33 @@ import {
   TranslationItem,
   WordFrequency,
 } from "./types";
-import {
-  isOmittedOrSystemPlaceholder,
-  stripOmissionPlaceholders,
-} from "./parser";
+import { isOmittedOrSystemPlaceholder } from "./parser";
+
+// Hoisted module-level regexes and formatters
+const SHORT_TRIM_PUNCT_REGEX = /^[<>]+|[<>]+$|[.!?,]+$/g;
+const OMITTED_KEYWORD_REGEX =
+  /\bomitted\b|\bdeleted\b|\bmissed\b|\bnull\b|\bdisertakan\b/i;
+
+const NICE_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 const STOP_WORDS = new Set([
   // English stop words
@@ -125,12 +148,7 @@ const SUBTEXT_DICTIONARY: Record<string, { meaning: string; vibeTag: string }> =
 };
 
 function formatNiceDate(timestamp: number): string {
-  const d = new Date(timestamp);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return NICE_DATE_FORMATTER.format(new Date(timestamp));
 }
 
 function formatTime12FromStr(timeStr: string): string {
@@ -183,39 +201,166 @@ function getSpeedBadge(medianMinutes: number): { badge: string; subtext: string 
   };
 }
 
-function tokenizeWords(text: string): string[] {
-  const sanitized = stripOmissionPlaceholders(text);
-  if (!sanitized) return [];
-  return sanitized
-    .toLowerCase()
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/[^\p{L}\p{N}'’]+/gu, " ")
-    .split(/\s+/)
-    .map((w) => w.replace(/^['’]+|['’]+$/g, ""))
-    .filter((w) => w.length >= 3 && !STOP_WORDS.has(w) && !/^\d+$/.test(w));
+// Fast character classification without RegExp/ICU property lookup overhead
+function isWordCode(c: number): boolean {
+  // ASCII a-z, A-Z, 0-9
+  if (
+    (c >= 97 && c <= 122) ||
+    (c >= 65 && c <= 90) ||
+    (c >= 48 && c <= 57)
+  ) {
+    return true;
+  }
+  // Latin-1 Supplement through international scripts (excluding general punctuation/emojis/surrogates >= 0x2000)
+  if (c >= 192 && c < 0x2000 && c !== 215 && c !== 247) {
+    return true;
+  }
+  return false;
 }
 
-function pickDiverseExamples(
-  matches: ParsedMessage[],
-  maxCount = 3
-): PhraseExample[] {
-  if (matches.length === 0) return [];
-  let selected: ParsedMessage[] = [];
-  if (matches.length <= maxCount) {
-    selected = matches;
-  } else {
-    // Pick first, middle, and latest occurrence across timeline
-    const first = matches[0];
-    const mid = matches[Math.floor(matches.length / 2)];
-    const last = matches[matches.length - 1];
-    selected = [first, mid, last];
+export function tokenizeWordsFast(text: string, outBuffer?: string[]): string[] {
+  const result = outBuffer || [];
+  if (outBuffer) result.length = 0;
+
+  const len = text.length;
+  let i = 0;
+
+  while (i < len) {
+    const c = text.charCodeAt(i);
+    if (!isWordCode(c)) {
+      i++;
+      continue;
+    }
+
+    const start = i;
+    let allDigits = c >= 48 && c <= 57;
+    let hasUpper = c >= 65 && c <= 90;
+    i++;
+
+    while (i < len) {
+      const ch = text.charCodeAt(i);
+      if (isWordCode(ch)) {
+        if (ch < 48 || ch > 57) allDigits = false;
+        if (ch >= 65 && ch <= 90) hasUpper = true;
+        i++;
+      } else if (
+        (ch === 39 || ch === 8217) &&
+        i + 1 < len &&
+        isWordCode(text.charCodeAt(i + 1))
+      ) {
+        // Internal apostrophe (e.g. don't, it's)
+        allDigits = false;
+        i++;
+      } else {
+        break;
+      }
+    }
+
+    const tokenLen = i - start;
+
+    // Fast skip for http:// or https:// URLs
+    if (
+      (tokenLen === 4 || tokenLen === 5) &&
+      i < len &&
+      text.charCodeAt(i) === 58
+    ) {
+      const prefix = text.slice(start, i).toLowerCase();
+      if (prefix === "http" || prefix === "https") {
+        while (i < len && text.charCodeAt(i) > 32) i++;
+        continue;
+      }
+    }
+
+    if (tokenLen < 3 || allDigits) continue;
+
+    const rawSlice = text.slice(start, i);
+    const word = hasUpper || rawSlice.charCodeAt(0) > 127
+      ? rawSlice.toLowerCase()
+      : rawSlice;
+
+    if (!STOP_WORDS.has(word)) {
+      result.push(word);
+    }
   }
-  return selected.map((m) => ({
-    sender: m.sender,
-    text: m.text.length > 180 ? `${m.text.slice(0, 180).trim()}…` : m.text,
-    timestamp: formatMessageTimestamp(m.timestamp, m.timeStr),
-  }));
+
+  return result;
 }
+
+// Bounded 3-slot example tracker per phrase/word (stores raw message indices, zero arrays allocated)
+interface PhraseStatEntry {
+  id: number;
+  id2?: number;
+  you: number;
+  them: number;
+  idx0: number;
+  idx1: number;
+  idx2: number;
+}
+
+function cleanShortPhraseFast(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end) {
+    const c = text.charCodeAt(start);
+    if (c === 32 || c === 9 || c === 60 || c === 62) start++;
+    else break;
+  }
+  while (end > start) {
+    const c = text.charCodeAt(end - 1);
+    if (
+      c === 32 ||
+      c === 9 ||
+      c === 60 ||
+      c === 62 ||
+      c === 46 ||
+      c === 33 ||
+      c === 63 ||
+      c === 44
+    ) {
+      end--;
+    } else {
+      break;
+    }
+  }
+  if (start >= end) return "";
+  return text.slice(start, end).toLowerCase();
+}
+
+function buildExamplesFromEntry(
+  entry: PhraseStatEntry | undefined,
+  messages: ParsedMessage[]
+): PhraseExample[] {
+  if (!entry) return [];
+  const indices: number[] = [entry.idx0];
+  if (entry.idx1 !== entry.idx0) {
+    indices.push(entry.idx1);
+  }
+  if (entry.idx2 !== entry.idx1 && entry.idx2 !== entry.idx0) {
+    indices.push(entry.idx2);
+  }
+
+  const examples: PhraseExample[] = [];
+  for (let i = 0; i < indices.length; i++) {
+    const m = messages[indices[i]];
+    if (!m) continue;
+    examples.push({
+      sender: m.sender,
+      text: m.text.length > 180 ? `${m.text.slice(0, 180).trim()}…` : m.text,
+      timestamp: formatMessageTimestamp(m.timestamp, m.timeStr),
+    });
+  }
+  return examples;
+}
+
+// Pre-allocated typed arrays for L2-cache-resident 1st-occurrence bigram filtering
+const BIGRAM_FILTER_BITS = 18;
+const BIGRAM_FILTER_SIZE = 1 << BIGRAM_FILTER_BITS; // 262,144 slots
+const BIGRAM_FILTER_MASK = BIGRAM_FILTER_SIZE - 1;
+const seenBgWord1 = new Int32Array(BIGRAM_FILTER_SIZE);
+const seenBgWord2 = new Int32Array(BIGRAM_FILTER_SIZE);
+const seenBgMeta = new Int32Array(BIGRAM_FILTER_SIZE);
+const reusableTokenList: string[] = [];
+const reusableWordIds: number[] = [];
 
 export function analyzeChatMessages(
   messages: ParsedMessage[],
@@ -225,13 +370,23 @@ export function analyzeChatMessages(
     throw new Error("No valid chat messages found in this file.");
   }
 
-  // Sort chronologically
-  const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+  // Only copy + sort if timestamps are not already in non-decreasing order
+  let isSorted = true;
+  for (let i = 1; i < messages.length; i++) {
+    if (messages[i].timestamp < messages[i - 1].timestamp) {
+      isSorted = false;
+      break;
+    }
+  }
+  const sorted = isSorted
+    ? messages
+    : [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
   // Identify top 2 participants
   const senderCounts = new Map<string, number>();
-  for (const m of sorted) {
-    senderCounts.set(m.sender, (senderCounts.get(m.sender) || 0) + 1);
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i].sender;
+    senderCounts.set(s, (senderCounts.get(s) || 0) + 1);
   }
 
   const rankedSenders = Array.from(senderCounts.entries())
@@ -246,7 +401,8 @@ export function analyzeChatMessages(
 
   if (
     rankedSenders.length >= 2 &&
-    (rankedSenders[1].toLowerCase() === "you" || rankedSenders[1].toLowerCase() === "anda")
+    (rankedSenders[1].toLowerCase() === "you" ||
+      rankedSenders[1].toLowerCase() === "anda")
   ) {
     defaultYou = rankedSenders[1];
     defaultThem = rankedSenders[0];
@@ -270,15 +426,15 @@ export function analyzeChatMessages(
 
   const partnerName = defaultThem;
 
-  // Filter to our two main participants
-  const duoMessages = sorted.filter(
-    (m) => m.sender === youName || m.sender === themName
-  );
-  const activeMessages = duoMessages.length > 0 ? duoMessages : sorted;
+  // Filter to our two main participants (skip copy if only <= 2 senders exist)
+  const activeMessages =
+    senderCounts.size <= 2
+      ? sorted
+      : sorted.filter((m) => m.sender === youName || m.sender === themName);
 
   const totalMessages = activeMessages.length;
   const firstTimestamp = activeMessages[0].timestamp;
-  const lastTimestamp = activeMessages[activeMessages.length - 1].timestamp;
+  const lastTimestamp = activeMessages[totalMessages - 1].timestamp;
   const totalDaysSpan = Math.max(
     1,
     Math.ceil((lastTimestamp - firstTimestamp) / (1000 * 60 * 60 * 24))
@@ -298,7 +454,6 @@ export function analyzeChatMessages(
       deletedCount: 0,
       replyLatenciesMin: [] as number[],
       initiationsCount: 0,
-      wordFreq: new Map<string, number>(),
       ghostsCaused: 0,
       doubleTextStreaks: 0,
       maxConsecutive: 0,
@@ -314,7 +469,6 @@ export function analyzeChatMessages(
       deletedCount: 0,
       replyLatenciesMin: [] as number[],
       initiationsCount: 0,
-      wordFreq: new Map<string, number>(),
       ghostsCaused: 0,
       doubleTextStreaks: 0,
       maxConsecutive: 0,
@@ -324,52 +478,112 @@ export function analyzeChatMessages(
     },
   };
 
-  // Bigram frequency for Shared Lore
-  const bigramStats = new Map<string, { total: number; you: number; them: number }>();
+  // Unified single-pass word & integer-keyed bigram stats with bounded 3-example message indices
+  const wordStats = new Map<string, PhraseStatEntry>();
+  const idToWord: string[] = [];
+  const bigramStats = new Map<number, PhraseStatEntry>();
+  seenBgWord1.fill(0);
+  seenBgWord2.fill(0);
+  seenBgMeta.fill(0);
 
-  // Longest message tracking
+  // Timeline buckets aggregated in the same single pass without new Date() / toLocaleDateString()
+  const useDailyOrWeekly = totalDaysSpan <= 45;
+  const monthBucketsMap = new Map<
+    string,
+    { label: string; shortLabel: string; count: number; youCount: number; themCount: number }
+  >();
+
+  // First two non-omitted messages for Card 01
+  let firstTextMsg: ParsedMessage | null = null;
+  let secondTextMsg: ParsedMessage | null = null;
+
+  // Longest message tracking for Card 08
   let longestByYou: ParsedMessage | null = null;
   let longestByThem: ParsedMessage | null = null;
 
-  // Left on Read (12+ hours gap where same person texts again)
-  let worstGhostIncident = {
-    ghoster: themName,
-    victim: youName,
-    hoursIgnored: 0,
-    formattedDate: formatNiceDate(firstTimestamp),
-    doubleTextSnippet: "",
-  };
+  // Left on Read (12+ hours gap where same person texts again) for Card 09
+  let worstGhostHours = 0;
+  let worstGhoster = themName;
+  let worstVictim = youName;
+  let worstGhostTimestamp = firstTimestamp;
+  let worstGhostSnippet = "";
 
-  // Longest silence gap between messages
-  let longestSilence: SilenceGapData = {
-    days: 0,
-    hours: 0,
-    startDate: formatNiceDate(firstTimestamp),
-    endDate: formatNiceDate(firstTimestamp),
-    lastSenderBeforeSilence: youName,
-    lastMessageBeforeSilence: activeMessages[0].text,
-    breakerSender: themName,
-    breakerMessage: activeMessages[0].text,
-  };
+  // Longest silence gap between messages for Card 13
+  let longestSilenceHours = 0;
+  let longestSilenceStartTs = firstTimestamp;
+  let longestSilenceEndTs = firstTimestamp;
+  let longestSilenceLastSender = youName;
+  let longestSilenceLastMsg = activeMessages[0].text;
+  let longestSilenceBreakerSender = themName;
+  let longestSilenceBreakerMsg = activeMessages[0].text;
 
   let currentStreakSender = "";
   let currentStreakLength = 0;
+  let lastSeenDateStr = "";
+  let lastTimelineKey = "";
+  let lastTimelineBucket: {
+    label: string;
+    shortLabel: string;
+    count: number;
+    youCount: number;
+    themCount: number;
+  } | null = null;
 
-  for (let i = 0; i < activeMessages.length; i++) {
+  for (let i = 0; i < totalMessages; i++) {
     const msg = activeMessages[i];
-    const sender = msg.sender === youName ? youName : themName;
-    const other = sender === youName ? themName : youName;
+    const isYou = msg.sender === youName;
+    const sender = isYou ? youName : themName;
+    const other = isYou ? themName : youName;
     const pStat = statsMap[sender];
 
-    uniqueDates.add(msg.dateStr);
+    const dStr = msg.dateStr; // YYYY-MM-DD
+    if (dStr !== lastSeenDateStr) {
+      lastSeenDateStr = dStr;
+      uniqueDates.add(dStr);
+
+      const tKey = useDailyOrWeekly
+        ? `${dStr.slice(0, 8)}${String(Math.ceil(parseInt(dStr.slice(8, 10), 10) / 3)).padStart(2, "0")}`
+        : dStr.slice(0, 7);
+
+      if (tKey !== lastTimelineKey || !lastTimelineBucket) {
+        lastTimelineKey = tKey;
+        let tBucket = monthBucketsMap.get(tKey);
+        if (tBucket === undefined) {
+          const monthIdx = Math.max(
+            0,
+            Math.min(11, parseInt(dStr.slice(5, 7), 10) - 1)
+          );
+          const monthName = SHORT_MONTHS[monthIdx];
+          let label: string;
+          let shortLabel: string;
+          if (useDailyOrWeekly) {
+            const dayNum = parseInt(dStr.slice(8, 10), 10);
+            label = `${monthName} ${dayNum}`;
+            shortLabel = `${monthName} ${dayNum}`;
+          } else {
+            const yr = dStr.slice(2, 4);
+            label = `${monthName} '${yr}`;
+            shortLabel = monthName;
+          }
+          tBucket = { label, shortLabel, count: 0, youCount: 0, themCount: 0 };
+          monthBucketsMap.set(tKey, tBucket);
+        }
+        lastTimelineBucket = tBucket;
+      }
+    }
+
+    if (lastTimelineBucket) {
+      lastTimelineBucket.count++;
+      if (isYou) lastTimelineBucket.youCount++;
+      else lastTimelineBucket.themCount++;
+    }
+
     hourBuckets[msg.hour]++;
     dayBuckets[msg.dayOfWeek]++;
 
     pStat.messageCount++;
     pStat.wordCount += msg.wordCount;
     pStat.charCount += msg.charCount;
-
-    const isOmitted = msg.isMedia || msg.isDeleted || isOmittedOrSystemPlaceholder(msg.text);
 
     if (msg.isMedia) pStat.mediaCount++;
     if (msg.isDeleted) pStat.deletedCount++;
@@ -389,55 +603,118 @@ export function analyzeChatMessages(
       pStat.maxConsecutive = currentStreakLength;
     }
 
-    // Track longest message & vocabulary/phrase stats (strictly excluding omitted media/system strings)
+    // Fast-exit omitted media / deleted / empty messages before word tokenization & n-grams
+    const isOmitted = msg.isMedia || msg.isDeleted || msg.wordCount === 0;
+
     if (!isOmitted) {
-      const cleanBody = stripOmissionPlaceholders(msg.text);
-      if (sender === youName) {
-        if (!longestByYou || cleanBody.length > longestByYou.charCount) {
+      if (firstTextMsg === null) {
+        firstTextMsg = msg;
+      } else if (secondTextMsg === null) {
+        secondTextMsg = msg;
+      }
+
+      if (isYou) {
+        if (!longestByYou || msg.charCount > longestByYou.charCount) {
           longestByYou = msg;
         }
       } else {
-        if (!longestByThem || cleanBody.length > longestByThem.charCount) {
+        if (!longestByThem || msg.charCount > longestByThem.charCount) {
           longestByThem = msg;
         }
       }
 
-      const trimmedLower = cleanBody
-        .trim()
-        .toLowerCase()
-        .replace(/^[<>]+|[<>]+$/g, "")
-        .replace(/[.!?,]+$/g, "")
-        .trim();
+      // Short phrase check (only for short messages <= 3 words and <= 24 chars)
+      if (msg.wordCount <= 3 && msg.charCount <= 24) {
+        const trimmedLower = cleanShortPhraseFast(msg.text);
+        const tLen = trimmedLower.length;
 
-      if (trimmedLower.length === 1 || trimmedLower === "ok" || trimmedLower === "k") {
-        pStat.singleLetterReplies++;
-      }
-      if (
-        trimmedLower.length >= 1 &&
-        trimmedLower.length <= 18 &&
-        msg.wordCount <= 3 &&
-        !isOmittedOrSystemPlaceholder(trimmedLower) &&
-        !/\bomitted\b|\bdeleted\b|\bmissed\b|\bnull\b/i.test(trimmedLower)
-      ) {
-        pStat.shortPhraseFreq.set(
-          trimmedLower,
-          (pStat.shortPhraseFreq.get(trimmedLower) || 0) + 1
-        );
+        if (tLen === 1 || trimmedLower === "ok" || trimmedLower === "k") {
+          pStat.singleLetterReplies++;
+        }
+        if (isYou === false && tLen >= 1 && tLen <= 18) {
+          pStat.shortPhraseFreq.set(
+            trimmedLower,
+            (pStat.shortPhraseFreq.get(trimmedLower) || 0) + 1
+          );
+        }
       }
 
-      // Tokenize for top words & shared lore
-      const tokens = tokenizeWords(cleanBody);
-      for (let t = 0; t < tokens.length; t++) {
+      // Single-pass word & integer-keyed bigram counting with bounded 3-slot example indices
+      const tokens = tokenizeWordsFast(msg.text, reusableTokenList);
+      const tokenLen = tokens.length;
+      reusableWordIds.length = tokenLen;
+
+      for (let t = 0; t < tokenLen; t++) {
         const w = tokens[t];
-        pStat.wordFreq.set(w, (pStat.wordFreq.get(w) || 0) + 1);
+        let wEntry = wordStats.get(w);
+        if (wEntry === undefined) {
+          const newId = idToWord.length;
+          idToWord.push(w);
+          wEntry = {
+            id: newId,
+            you: isYou ? 1 : 0,
+            them: isYou ? 0 : 1,
+            idx0: i,
+            idx1: i,
+            idx2: i,
+          };
+          wordStats.set(w, wEntry);
+        } else {
+          if (isYou) wEntry.you++;
+          else wEntry.them++;
+          const tot = wEntry.you + wEntry.them;
+          if (tot === 2) {
+            wEntry.idx1 = i;
+            wEntry.idx2 = i;
+          } else if (i !== wEntry.idx2) {
+            if ((tot & 1) === 0) wEntry.idx1 = wEntry.idx2;
+            wEntry.idx2 = i;
+          }
+        }
+        reusableWordIds[t] = wEntry.id;
+      }
 
-        if (t < tokens.length - 1) {
-          const bg = `${tokens[t]} ${tokens[t + 1]}`;
-          const existing = bigramStats.get(bg) || { total: 0, you: 0, them: 0 };
-          existing.total++;
-          if (sender === youName) existing.you++;
-          else existing.them++;
-          bigramStats.set(bg, existing);
+      for (let t = 0; t < tokenLen - 1; t++) {
+        const id1 = reusableWordIds[t];
+        const id2 = reusableWordIds[t + 1];
+        const tag1 = id1 + 1;
+        const tag2 = id2 + 1;
+        // Pure 32-bit Smi hash into L2-cache-resident Int32Array filter
+        const slot = (Math.imul(id1, 16777619) ^ id2) & BIGRAM_FILTER_MASK;
+        const slotW1 = seenBgWord1[slot];
+
+        if (slotW1 === -tag1 && seenBgWord2[slot] === tag2) {
+          // 3rd+ occurrence: already promoted into bigramStats
+          const bgEntry = bigramStats.get(slot);
+          if (bgEntry !== undefined) {
+            if (isYou) bgEntry.you++;
+            else bgEntry.them++;
+            const tot = bgEntry.you + bgEntry.them;
+            if (i !== bgEntry.idx2) {
+              if ((tot & 1) === 0) bgEntry.idx1 = bgEntry.idx2;
+              bgEntry.idx2 = i;
+            }
+          }
+        } else if (slotW1 === tag1 && seenBgWord2[slot] === tag2) {
+          // 2nd occurrence: promote into bigramStats keyed by 18-bit Smi `slot`
+          seenBgWord1[slot] = -tag1;
+          const firstPacked = seenBgMeta[slot];
+          const firstIdx = firstPacked >>> 1;
+          const firstWasYou = (firstPacked & 1) === 1;
+          bigramStats.set(slot, {
+            id: id1,
+            id2,
+            you: (firstWasYou ? 1 : 0) + (isYou ? 1 : 0),
+            them: (firstWasYou ? 0 : 1) + (isYou ? 0 : 1),
+            idx0: firstIdx,
+            idx1: i,
+            idx2: i,
+          });
+        } else if (slotW1 >= 0) {
+          // 1st occurrence (only claim slot if not already holding a promoted bigram)
+          seenBgWord1[slot] = tag1;
+          seenBgWord2[slot] = tag2;
+          seenBgMeta[slot] = (i << 1) | (isYou ? 1 : 0);
         }
       }
     }
@@ -449,7 +726,7 @@ export function analyzeChatMessages(
       const prev = activeMessages[i - 1];
       const prevSender = prev.sender === youName ? youName : themName;
       const deltaMs = Math.max(0, msg.timestamp - prev.timestamp);
-      const deltaMinutes = deltaMs / (1000 * 60);
+      const deltaMinutes = deltaMs / 60000;
       const deltaHours = deltaMinutes / 60;
 
       // Conversation Initiation: gap >= 5 hours (300 mins)
@@ -462,45 +739,68 @@ export function analyzeChatMessages(
         pStat.replyLatenciesMin.push(deltaMinutes);
       }
 
-      // Left On Read: same sender double-texts after >= 12 hours of silence!
+      // Left On Read: same sender double-texts after >= 12 hours of silence
       if (sender === prevSender && deltaHours >= 12) {
-        // The OTHER person left this sender on read!
         statsMap[other].ghostsCaused++;
-        if (deltaHours > worstGhostIncident.hoursIgnored && !isOmitted) {
-          worstGhostIncident = {
-            ghoster: other,
-            victim: sender,
-            hoursIgnored: Math.round(deltaHours),
-            formattedDate: formatNiceDate(msg.timestamp),
-            doubleTextSnippet: msg.text.slice(0, 90),
-          };
+        if (deltaHours > worstGhostHours && !isOmitted) {
+          worstGhostHours = deltaHours;
+          worstGhoster = other;
+          worstVictim = sender;
+          worstGhostTimestamp = msg.timestamp;
+          worstGhostSnippet = msg.text.slice(0, 90);
         }
       }
 
-      // Longest silence gap (Card 13: Blocked You Gag Card)
-      const longestGapTotalHours = longestSilence.days * 24 + longestSilence.hours;
-      if (deltaHours > longestGapTotalHours) {
-        const days = Math.floor(deltaHours / 24);
-        const remHours = Math.round(deltaHours % 24);
-        longestSilence = {
-          days,
-          hours: remHours,
-          startDate: formatNiceDate(prev.timestamp),
-          endDate: formatNiceDate(msg.timestamp),
-          lastSenderBeforeSilence: prevSender,
-          lastMessageBeforeSilence:
-            prev.isMedia || isOmittedOrSystemPlaceholder(prev.text)
-              ? "Sent a media attachment"
-              : prev.text.slice(0, 85),
-          breakerSender: sender,
-          breakerMessage:
-            msg.isMedia || isOmittedOrSystemPlaceholder(msg.text)
-              ? "Sent a media attachment"
-              : msg.text.slice(0, 85),
-        };
+      // Longest silence gap (store raw epoch timestamps during loop; format once at end)
+      if (deltaHours > longestSilenceHours) {
+        longestSilenceHours = deltaHours;
+        longestSilenceStartTs = prev.timestamp;
+        longestSilenceEndTs = msg.timestamp;
+        longestSilenceLastSender = prevSender;
+        longestSilenceLastMsg =
+          prev.isMedia || prev.isDeleted || prev.wordCount === 0
+            ? "Sent a media attachment"
+            : prev.text.slice(0, 85);
+        longestSilenceBreakerSender = sender;
+        longestSilenceBreakerMsg =
+          isOmitted ? "Sent a media attachment" : msg.text.slice(0, 85);
       }
     }
   }
+
+  // Extract top words per participant & shared signature words in a single pass over wordStats
+  const youWordsList: WordFrequency[] = [];
+  const themWordsList: WordFrequency[] = [];
+  const sharedWordCandidates: {
+    phrase: string;
+    totalCount: number;
+    youCount: number;
+    themCount: number;
+    entry: PhraseStatEntry;
+  }[] = [];
+
+  for (const [word, entry] of wordStats.entries()) {
+    if (entry.you > 0) {
+      youWordsList.push({ word, count: entry.you });
+    }
+    if (entry.them > 0) {
+      themWordsList.push({ word, count: entry.them });
+    }
+    if (entry.you >= 2 && entry.them >= 2) {
+      sharedWordCandidates.push({
+        phrase: word,
+        totalCount: entry.you + entry.them,
+        youCount: entry.you,
+        themCount: entry.them,
+        entry,
+      });
+    }
+  }
+
+  youWordsList.sort((a, b) => b.count - a.count);
+  themWordsList.sort((a, b) => b.count - a.count);
+  const youTopWords = youWordsList.slice(0, 8);
+  const themTopWords = themWordsList.slice(0, 8);
 
   // Helper to compute median & average reply time
   function computeReplyStats(latencies: number[]): { median: number; avg: number } {
@@ -511,7 +811,8 @@ export function analyzeChatMessages(
       sortedLat.length % 2 !== 0
         ? sortedLat[mid]
         : (sortedLat[mid - 1] + sortedLat[mid]) / 2;
-    const sum = sortedLat.reduce((acc, v) => acc + v, 0);
+    let sum = 0;
+    for (let i = 0; i < sortedLat.length; i++) sum += sortedLat[i];
     return {
       median: Math.max(0.5, Number(median.toFixed(1))),
       avg: Math.max(0.5, Number((sum / sortedLat.length).toFixed(1))),
@@ -523,11 +824,16 @@ export function analyzeChatMessages(
     statsMap[youName].initiationsCount + statsMap[themName].initiationsCount
   );
 
-  function buildParticipantMetrics(name: string): ParticipantMetrics {
+  function buildParticipantMetrics(
+    name: string,
+    topWords: WordFrequency[]
+  ): ParticipantMetrics {
     const raw = statsMap[name];
     const reply = computeReplyStats(raw.replyLatenciesMin);
     const speedInfo = getSpeedBadge(reply.median);
-    const percentage = Math.round((raw.messageCount / Math.max(1, totalMessages)) * 100);
+    const percentage = Math.round(
+      (raw.messageCount / Math.max(1, totalMessages)) * 100
+    );
     const initiationPercentage = Math.round(
       (raw.initiationsCount / totalInitiations) * 100
     );
@@ -540,20 +846,24 @@ export function analyzeChatMessages(
         ? Math.round((raw.lateNightCount / raw.messageCount) * 100)
         : 0;
 
-    // Top words
-    const topWords: WordFrequency[] = Array.from(raw.wordFreq.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([word, count]) => ({ word, count }));
-
     // Interest Score (0-100)
     const velocityScore = Math.round(
       Math.max(25, Math.min(99, 100 - Math.log1p(reply.median) * 18))
     );
-    const initiationScore = Math.min(99, Math.max(30, initiationPercentage + 25));
-    const effortScore = Math.min(99, Math.max(35, Math.round(avgWordsPerMessage * 9.5)));
-    const doubleTextRate = (raw.doubleTextStreaks / Math.max(1, raw.messageCount)) * 100;
-    const doubleTextScore = Math.min(99, Math.max(35, Math.round(45 + doubleTextRate * 14)));
+    const initiationScore = Math.min(
+      99,
+      Math.max(30, initiationPercentage + 25)
+    );
+    const effortScore = Math.min(
+      99,
+      Math.max(35, Math.round(avgWordsPerMessage * 9.5))
+    );
+    const doubleTextRate =
+      (raw.doubleTextStreaks / Math.max(1, raw.messageCount)) * 100;
+    const doubleTextScore = Math.min(
+      99,
+      Math.max(35, Math.round(45 + doubleTextRate * 14))
+    );
 
     const interestScore = Math.min(
       99,
@@ -651,27 +961,28 @@ export function analyzeChatMessages(
     };
   }
 
-  const youMetrics = buildParticipantMetrics(youName);
-  const themMetrics = buildParticipantMetrics(themName);
+  const youMetrics = buildParticipantMetrics(youName, youTopWords);
+  const themMetrics = buildParticipantMetrics(themName, themTopWords);
   // Ensure percentages sum to 100
   themMetrics.percentage = Math.max(0, 100 - youMetrics.percentage);
-  themMetrics.initiationPercentage = Math.max(0, 100 - youMetrics.initiationPercentage);
+  themMetrics.initiationPercentage = Math.max(
+    0,
+    100 - youMetrics.initiationPercentage
+  );
 
   // Card 1: First Message
-  const nonOmittedMessages = activeMessages.filter(
-    (m) => !m.isMedia && !m.isDeleted && !isOmittedOrSystemPlaceholder(m.text)
-  );
-  const firstTextMsg = nonOmittedMessages[0] || activeMessages[0];
-  const secondTextMsg = nonOmittedMessages.find((m) => m.id > firstTextMsg.id);
+  const resolvedFirstMsg = firstTextMsg || activeMessages[0];
   const firstMessage: FirstMessageData = {
-    sender: firstTextMsg.sender,
-    text: firstTextMsg.text,
-    timestamp: firstTextMsg.timestamp,
-    formattedDate: formatNiceDate(firstTextMsg.timestamp),
-    formattedTime: firstTextMsg.timeStr,
+    sender: resolvedFirstMsg.sender,
+    text: resolvedFirstMsg.text,
+    timestamp: resolvedFirstMsg.timestamp,
+    formattedDate: formatNiceDate(resolvedFirstMsg.timestamp),
+    formattedTime: resolvedFirstMsg.timeStr,
     daysAgo: Math.max(
       1,
-      Math.floor((Date.now() - firstTextMsg.timestamp) / (1000 * 60 * 60 * 24))
+      Math.floor(
+        (Date.now() - resolvedFirstMsg.timestamp) / (1000 * 60 * 60 * 24)
+      )
     ),
     secondMessage: secondTextMsg
       ? {
@@ -682,70 +993,63 @@ export function analyzeChatMessages(
       : undefined,
   };
 
-  // Helper to find real message occurrences for a given phrase
-  function findPhraseExamples(phrase: string): PhraseExample[] {
-    const words = phrase
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    if (words.length === 0) return [];
-    const pattern = new RegExp(`\\b${words.join("[^\\p{L}\\p{N}]+")}\\b`, "iu");
-    const fallbackPattern = new RegExp(words.join("\\s+"), "i");
-
-    let matching = nonOmittedMessages.filter((m) => pattern.test(m.text));
-    if (matching.length === 0) {
-      matching = nonOmittedMessages.filter((m) => fallbackPattern.test(m.text));
-    }
-    return pickDiverseExamples(matching, 3);
-  }
-
   // Card 7: Shared Lore ("Only You Two Say This")
-  const sharedLore: SharedLoreItem[] = [];
-  const sortedBigrams = Array.from(bigramStats.entries())
-    .filter(([, v]) => v.you >= 1 && v.them >= 1 && v.total >= 2)
-    .sort((a, b) => b[1].total - a[1].total);
+  // Format timestamps ONLY for the final selected top phrases (max 12-18 date strings formatted total!)
+  const sortedBigrams: { entry: PhraseStatEntry; total: number }[] = [];
+  for (const entry of bigramStats.values()) {
+    if (entry.you >= 1 && entry.them >= 1) {
+      const total = entry.you + entry.them;
+      if (total >= 2) {
+        sortedBigrams.push({ entry, total });
+      }
+    }
+  }
+  sortedBigrams.sort((a, b) => b.total - a.total);
 
-  for (const [phrase, counts] of sortedBigrams.slice(0, 4)) {
+  const sharedLore: SharedLoreItem[] = [];
+  for (const item of sortedBigrams.slice(0, 4)) {
+    const id1 = item.entry.id;
+    const id2 = item.entry.id2 ?? 0;
+    const phrase = `${idToWord[id1] || ""} ${idToWord[id2] || ""}`.trim();
     sharedLore.push({
       phrase,
-      totalCount: counts.total,
-      youCount: counts.you,
-      themCount: counts.them,
+      totalCount: item.total,
+      youCount: item.entry.you,
+      themCount: item.entry.them,
       category: "Inside Phrase",
-      examples: findPhraseExamples(phrase),
+      examples: buildExamplesFromEntry(item.entry, activeMessages),
     });
   }
 
-  // Also include shared signature single words used by both
+  sharedWordCandidates.sort((a, b) => b.totalCount - a.totalCount);
   const sharedWords: SharedLoreItem[] = [];
-  for (const [word, youCount] of statsMap[youName].wordFreq.entries()) {
-    const themCount = statsMap[themName].wordFreq.get(word) || 0;
-    if (youCount >= 2 && themCount >= 2) {
-      sharedWords.push({
-        phrase: word,
-        totalCount: youCount + themCount,
-        youCount,
-        themCount,
-        category: "Signature Word",
-        examples: findPhraseExamples(word),
-      });
-    }
+  const neededSharedWords = Math.max(0, 6 - sharedLore.length);
+  for (const item of sharedWordCandidates.slice(0, neededSharedWords)) {
+    sharedWords.push({
+      phrase: item.phrase,
+      totalCount: item.totalCount,
+      youCount: item.youCount,
+      themCount: item.themCount,
+      category: "Signature Word",
+      examples: buildExamplesFromEntry(item.entry, activeMessages),
+    });
   }
-  sharedWords.sort((a, b) => b.totalCount - a.totalCount);
 
   const combinedLore = [...sharedLore, ...sharedWords].slice(0, 6);
   if (combinedLore.length === 0) {
-    // Fallback to top words if chat is tiny
-    const fallbackWords = [...youMetrics.topWords, ...themMetrics.topWords].slice(0, 5);
+    const fallbackWords = [...youMetrics.topWords, ...themMetrics.topWords].slice(
+      0,
+      5
+    );
     fallbackWords.forEach((fw, idx) => {
+      const entry = wordStats.get(fw.word);
       combinedLore.push({
         phrase: fw.word,
         totalCount: fw.count,
         youCount: idx % 2 === 0 ? fw.count : Math.ceil(fw.count / 2),
         themCount: idx % 2 === 1 ? fw.count : Math.floor(fw.count / 2),
         category: "Shared Vibe",
-        examples: findPhraseExamples(fw.word),
+        examples: buildExamplesFromEntry(entry, activeMessages),
       });
     });
   }
@@ -755,7 +1059,7 @@ export function analyzeChatMessages(
     (m): m is ParsedMessage => m !== null
   );
   allValidMsgs.sort((a, b) => b.charCount - a.charCount);
-  const winnerMsg = allValidMsgs[0] || firstTextMsg;
+  const winnerMsg = allValidMsgs[0] || resolvedFirstMsg;
   const runnerUpMsg = allValidMsgs[1] || winnerMsg;
 
   const longestMessage: LongestMessageData = {
@@ -779,12 +1083,19 @@ export function analyzeChatMessages(
 
   // Card 9: Left On Read
   const leftOnRead: LeftOnReadData = {
-    totalIncidents: youMetrics.ghostIncidentsCaused + themMetrics.ghostIncidentsCaused,
+    totalIncidents:
+      youMetrics.ghostIncidentsCaused + themMetrics.ghostIncidentsCaused,
     youLeftThemCount: youMetrics.ghostIncidentsCaused,
     themLeftYouCount: themMetrics.ghostIncidentsCaused,
     worstIncident:
-      worstGhostIncident.hoursIgnored > 0
-        ? worstGhostIncident
+      worstGhostHours > 0
+        ? {
+            ghoster: worstGhoster,
+            victim: worstVictim,
+            hoursIgnored: Math.round(worstGhostHours),
+            formattedDate: formatNiceDate(worstGhostTimestamp),
+            doubleTextSnippet: worstGhostSnippet,
+          }
         : {
             ghoster:
               themMetrics.medianReplyMinutes >= youMetrics.medianReplyMinutes
@@ -797,7 +1108,10 @@ export function analyzeChatMessages(
             hoursIgnored: Math.max(
               4,
               Math.round(
-                Math.max(themMetrics.avgReplyMinutes, youMetrics.avgReplyMinutes) / 10
+                Math.max(
+                  themMetrics.avgReplyMinutes,
+                  youMetrics.avgReplyMinutes
+                ) / 10
               )
             ),
             formattedDate: formatNiceDate(lastTimestamp),
@@ -805,15 +1119,31 @@ export function analyzeChatMessages(
           },
   };
 
+  // Card 13: Longest Silence (format dates once at the end)
+  const longestSilence: SilenceGapData = {
+    days: Math.floor(longestSilenceHours / 24),
+    hours: Math.round(longestSilenceHours % 24),
+    startDate: formatNiceDate(longestSilenceStartTs),
+    endDate: formatNiceDate(longestSilenceEndTs),
+    lastSenderBeforeSilence: longestSilenceLastSender,
+    lastMessageBeforeSilence: longestSilenceLastMsg,
+    breakerSender: longestSilenceBreakerSender,
+    breakerMessage: longestSilenceBreakerMsg,
+  };
+
   // Card 12: Red Flags Checklist
   const slowerPerson =
-    themMetrics.avgReplyMinutes >= youMetrics.avgReplyMinutes ? themMetrics : youMetrics;
+    themMetrics.avgReplyMinutes >= youMetrics.avgReplyMinutes
+      ? themMetrics
+      : youMetrics;
   const nightOwl =
     themMetrics.lateNightPercentage >= youMetrics.lateNightPercentage
       ? themMetrics
       : youMetrics;
   const deleter =
-    themMetrics.deletedCount >= youMetrics.deletedCount ? themMetrics : youMetrics;
+    themMetrics.deletedCount >= youMetrics.deletedCount
+      ? themMetrics
+      : youMetrics;
   const doubleTexter =
     themMetrics.doubleTextStreaks >= youMetrics.doubleTextStreaks
       ? themMetrics
@@ -830,7 +1160,8 @@ export function analyzeChatMessages(
       culprit: slowerPerson.name,
       evidence: `Median reply is ${slowerPerson.medianReplyMinutes}m, but Longest Silence hit ${longestSilence.days}d ${longestSilence.hours}h`,
       severity: "High",
-      triggered: longestSilence.days >= 1 || slowerPerson.avgReplyMinutes > 15,
+      triggered:
+        longestSilence.days >= 1 || slowerPerson.avgReplyMinutes > 15,
     },
     {
       id: "late-night-philosopher",
@@ -846,7 +1177,9 @@ export function analyzeChatMessages(
       culprit: doubleTexter.name,
       evidence: `${doubleTexter.doubleTextStreaks} rapid-fire bursts (peak streak: ${doubleTexter.maxConsecutiveMessages} texts in a row)`,
       severity: "Medium",
-      triggered: doubleTexter.doubleTextStreaks >= 2 || doubleTexter.maxConsecutiveMessages >= 3,
+      triggered:
+        doubleTexter.doubleTextStreaks >= 2 ||
+        doubleTexter.maxConsecutiveMessages >= 3,
     },
     {
       id: "evidence-tampering",
@@ -869,13 +1202,9 @@ export function analyzeChatMessages(
   ];
 
   // Card 14: What [Them] Really Means
-  const themShortEntries = Array.from(statsMap[themName].shortPhraseFreq.entries())
-    .filter(
-      ([phrase]) =>
-        !isOmittedOrSystemPlaceholder(phrase) &&
-        !/\bomitted\b|\bdeleted\b|\bmissed\b|\bnull\b/i.test(phrase)
-    )
-    .sort((a, b) => b[1] - a[1]);
+  const themShortEntries = Array.from(
+    statsMap[themName].shortPhraseFreq.entries()
+  ).sort((a, b) => b[1] - a[1]);
 
   const translations: TranslationItem[] = [];
   const usedOriginals = new Set<string>();
@@ -894,10 +1223,15 @@ export function analyzeChatMessages(
     }
   }
 
-  // Fill remaining slots up to 3-4 using their top short phrases
   for (const [phrase, count] of themShortEntries) {
     if (translations.length >= 3) break;
     if (usedOriginals.has(phrase)) continue;
+    if (
+      OMITTED_KEYWORD_REGEX.test(phrase) ||
+      isOmittedOrSystemPlaceholder(phrase)
+    ) {
+      continue;
+    }
     usedOriginals.add(phrase);
     translations.push({
       original: `"${phrase}"`,
@@ -920,57 +1254,19 @@ export function analyzeChatMessages(
     });
   }
 
-  // Card 15: Timeline (Month-by-month or Week-by-week depending on span)
-  const monthBucketsMap = new Map<
-    string,
-    { label: string; shortLabel: string; count: number; youCount: number; themCount: number }
-  >();
-
-  const useDailyOrWeekly = totalDaysSpan <= 45;
-
-  for (const m of activeMessages) {
-    const d = new Date(m.timestamp);
-    let key: string;
-    let label: string;
-    let shortLabel: string;
-
-    if (useDailyOrWeekly) {
-      const monthName = d.toLocaleDateString("en-US", { month: "short" });
-      const dayNum = d.getDate();
-      key = `${m.dateStr.slice(0, 8)}${String(Math.ceil(dayNum / 3)).padStart(2, "0")}`;
-      label = `${monthName} ${dayNum}`;
-      shortLabel = `${monthName.slice(0, 3)} ${dayNum}`;
-    } else {
-      const monthName = d.toLocaleDateString("en-US", { month: "short" });
-      const yr = String(d.getFullYear()).slice(-2);
-      key = m.dateStr.slice(0, 7); // YYYY-MM
-      label = `${monthName} '${yr}`;
-      shortLabel = monthName;
-    }
-
-    const entry = monthBucketsMap.get(key) || {
-      label,
-      shortLabel,
-      count: 0,
-      youCount: 0,
-      themCount: 0,
-    };
-    entry.count++;
-    if (m.sender === youName) entry.youCount++;
-    else entry.themCount++;
-    monthBucketsMap.set(key, entry);
-  }
-
+  // Card 15: Timeline
   let timeline: TimelineBucket[] = Array.from(monthBucketsMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([, v]) => v);
 
-  // Compress to max 12 bars if very long history so mobile chart looks crisp
   if (timeline.length > 12) {
     const step = timeline.length / 12;
     const compressed: TimelineBucket[] = [];
     for (let i = 0; i < 12; i++) {
-      const slice = timeline.slice(Math.floor(i * step), Math.floor((i + 1) * step));
+      const slice = timeline.slice(
+        Math.floor(i * step),
+        Math.floor((i + 1) * step)
+      );
       if (slice.length > 0) {
         compressed.push({
           label: slice[0].label,
@@ -993,13 +1289,15 @@ export function analyzeChatMessages(
 
   if (timeline[0]) timeline[0].phase = "Honeymoon";
   if (timeline[peakIdx]) timeline[peakIdx].phase = "The Peak";
-  if (timeline[dryIdx] && dryIdx !== peakIdx) timeline[dryIdx].phase = "Dry Spell";
+  if (timeline[dryIdx] && dryIdx !== peakIdx)
+    timeline[dryIdx].phase = "Dry Spell";
   if (timeline[timeline.length - 1] && timeline.length - 1 !== peakIdx) {
     timeline[timeline.length - 1].phase = "Current";
   }
 
   const lastCount = timeline[timeline.length - 1]?.count || 0;
-  const prevCount = timeline[Math.max(0, timeline.length - 2)]?.count || lastCount;
+  const prevCount =
+    timeline[Math.max(0, timeline.length - 2)]?.count || lastCount;
   const currentTrend: ChatWrappedAnalysis["timelineStats"]["currentTrend"] =
     lastCount > prevCount * 1.15
       ? "Rising"
@@ -1011,7 +1309,8 @@ export function analyzeChatMessages(
   const mutualInterestScore = Math.round(
     (youMetrics.interestScore + themMetrics.interestScore) / 2
   );
-  const balanceScore = 100 - Math.abs(youMetrics.percentage - themMetrics.percentage);
+  const balanceScore =
+    100 - Math.abs(youMetrics.percentage - themMetrics.percentage);
   const compatibilityScore = Math.min(
     99,
     Math.max(62, Math.round(mutualInterestScore * 0.65 + balanceScore * 0.35))
@@ -1076,7 +1375,8 @@ export function analyzeChatMessages(
   ];
   const peakDayOfWeek = DAYS_NAMES[dayBuckets.indexOf(Math.max(...dayBuckets))];
 
-  const hasSubtextPhrase = translations.length > 0 && Boolean(translations[0]?.original);
+  const hasSubtextPhrase =
+    translations.length > 0 && Boolean(translations[0]?.original);
   const retireWord = hasSubtextPhrase
     ? translations[0].original.replace(/"/g, "")
     : youMetrics.topWords[0]?.word || "okay";

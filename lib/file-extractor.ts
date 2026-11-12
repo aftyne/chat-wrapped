@@ -1,4 +1,4 @@
-import { unzip, UnzipFileInfo } from "fflate";
+import { unzipSync, UnzipFileInfo } from "fflate";
 
 const ZIP_MIME_TYPES = new Set([
   "application/zip",
@@ -56,28 +56,17 @@ export async function extractChatTextFromFile(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
     const uint8Data = new Uint8Array(arrayBuffer);
 
-    const unzippedEntries = await new Promise<Record<string, Uint8Array>>(
-      (resolve, reject) => {
-        unzip(
-          uint8Data,
-          {
-            // Filter out macOS metadata and bundled media (.opus, .mp4, .jpg, etc.) before decompression
-            filter(fileInfo: UnzipFileInfo) {
-              return isTxtEntry(fileInfo.name);
-            },
-          },
-          (err, unzipped) => {
-            if (err) {
-              reject(
-                new Error("No valid WhatsApp chat log found inside this .zip")
-              );
-              return;
-            }
-            resolve(unzipped);
-          }
-        );
-      }
-    );
+    let unzippedEntries: Record<string, Uint8Array>;
+    try {
+      unzippedEntries = unzipSync(uint8Data, {
+        // Filter out macOS metadata and bundled media (.opus, .mp4, .jpg, etc.) before decompression
+        filter(fileInfo: UnzipFileInfo) {
+          return isTxtEntry(fileInfo.name);
+        },
+      });
+    } catch {
+      throw new Error("No valid WhatsApp chat log found inside this .zip");
+    }
 
     const candidatePaths = Object.keys(unzippedEntries).filter(
       (path) => isTxtEntry(path) && unzippedEntries[path]?.byteLength > 0
